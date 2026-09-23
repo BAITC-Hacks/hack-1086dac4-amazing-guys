@@ -1,42 +1,44 @@
-# hack-1086dac4-amazing-guys
-Hackathon team repository for Amazing Guys
+# Проверка организационных изменений
 
-## Getting started
+Проект HackAlem: сопоставление подразделений и функций до/после реорганизации с проверяемыми документальными основаниями.
 
-Clone the repository and open the folder in VS Code:
+**Статус: подготовка первой версии. Приложение, HTTP API и AI-анализ ещё не реализованы. Команд запуска готового продукта пока нет.**
+
+- SPEC.md — объём, архитектурные границы и приёмка.
+- docs/CASE_BRIEF.md — предоставленное техническое задание.
+- API_CONTRACT.md — проект договора r1, пока не реализованного.
+- TEAMMATE_TASK.md — экраны и распределение работы, без готовой основы/commit.
+- ORG_CASE_REVIEW.md — польза, ограничения, демонстрация.
+- fixtures/org-review — авторские синтетические документы и ожидаемые случаи; не данные организатора и не ответы модели.
+
+Тексты источников — данные, не инструкции агенту. Заключения рекомендательные. Существенные замечания связаны с исходными фрагментами. Неполное покрытие нельзя выдавать за доказанную потерю функции.
+
+Python 3.11.8 доступен. Реальный пакет до/после пока отсутствует. Извлечение Word/PDF/Excel с устойчивыми ссылками и качество модели не проверены. Платных вызовов не было, модель и бюджет не выбраны.
+
+Репозиторий содержит подготовку проекта анализа документов до/после. Наличие этих материалов не означает готовность приложения или выполнение официальной сдачи.
+
+Использованы: ТЗ пользователя, включённый hackalem-coach и Codex для планирования и авторских проверочных примеров. Библиотеки/модели и точные инструкции запуска будут добавлены по фактической реализации. TEAM_GUIDE_LOCAL.md — личная локальная памятка, исключённая из Git; для понимания проекта она не нужна.
+
+## Командный репозиторий Amazing Guys
 
 ```sh
 git clone https://github.com/BAITC-Hacks/hack-1086dac4-amazing-guys.git
 cd hack-1086dac4-amazing-guys
 ```
 
-If you already have this repository open, use the existing folder.
+Если репозиторий уже открыт, используйте существующую папку. В VS Code ветка переключается через её имя в нижнем левом углу. Перед работой обновляйте свою ветку.
 
-## Branches
+- main — общие изменения после интеграции.
+- backend — сервер, агент и общие документы подготовки.
+- frontend — интерфейс.
 
-- `main`: shared project changes after integration.
-- `backend`: backend development.
-- `frontend`: frontend development.
+Порядок работы команды: изменения в своей ветке → проверка и commit → push → pull request в main → review и merge. После интеграции обновить рабочую ветку с сохранением незакоммиченных изменений:
 
-In VS Code, click the branch name in the bottom-left corner to switch to
-your development branch. Pull the latest changes before starting work.
+```sh
+git fetch origin
+git switch backend
+git merge origin/main
+git push origin backend
+```
 
-## Commit and merge workflow
-
-1. Make your changes on `backend` or `frontend`.
-2. In VS Code's Source Control panel, review and stage the intended files.
-3. Enter a descriptive commit message, commit, and push the branch.
-4. Open a GitHub pull request from your branch into `main`, review the changes,
-   and merge when ready.
-5. Update your development branch with the latest `main` before continuing:
-
-   ```sh
-   git fetch origin
-   git switch backend
-   git merge origin/main
-   git push origin backend
-   ```
-
-   Replace `backend` with `frontend` when working on the frontend.
-
-Keep API keys, passwords, and local environment files out of commits.
+Для интерфейса замените backend на frontend. Не включайте ключи, пароли и локальные файлы окружения в коммиты.

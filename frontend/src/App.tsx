@@ -596,7 +596,7 @@ export default function App() {
         );
         analysisId.current = accepted.analysis_id;
       }
-      const deadline = Date.now() + 5 * 60_000;
+      const deadline = Date.now() + 10 * 60_000;
       while (Date.now() < deadline) {
         const status = await api.status(analysisId.current, ac.signal);
         setProgress(status);
@@ -625,7 +625,7 @@ export default function App() {
         await delay(1400, ac.signal);
       }
       throw new ApiError(
-        "Ожидание заняло более пяти минут. Можно продолжить проверку состояния без повторной отправки файлов.",
+        "Ожидание заняло более десяти минут. Можно продолжить проверку состояния без повторной отправки файлов.",
         true,
       );
     } catch (e) {

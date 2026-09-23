@@ -73,6 +73,18 @@ def test_word_header_is_explicitly_partial():
     assert len(evidence) == 1
 
 
+def test_page_number_only_footer_does_not_hide_source_prose():
+    from docx.oxml import OxmlElement
+    word = WordDocument()
+    word.add_paragraph("Отдел проверяет платежи.")
+    field = OxmlElement("w:instrText")
+    field.text = " PAGE "
+    word.sections[0].footer.paragraphs[0].add_run()._r.append(field)
+    document, evidence = extract(saved_bytes(word))
+    assert document.extraction_status == "read" and document.warnings == []
+    assert evidence[0].quote == "Отдел проверяет платежи."
+
+
 def test_word_image_warns_without_discarding_text():
     from PIL import Image
 

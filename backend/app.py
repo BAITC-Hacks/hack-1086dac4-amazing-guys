@@ -16,11 +16,26 @@ from starlette.exceptions import HTTPException
 
 from backend.agent import AgentFailure, run_agent
 from backend.config import Settings
+from backend.context import source_characters
 from backend.extraction import SUPPORTED_EXTENSIONS, extract_document
-from backend.models import AnalysisAccepted, AnalysisStatus, Document, Evidence, Report
+from backend.models import (AnalysisAccepted, AnalysisStatus, Document, ErrorResponse,
+                            Evidence, HealthResponse, Report)
 from backend.storage import Store
 
 logger = logging.getLogger(__name__)
+
+
+def error_responses(*codes: int):
+    descriptions = {
+        400: "Malformed request.",
+        404: "Analysis or evidence not found.",
+        409: "Idempotency conflict or report not ready.",
+        413: "Uploaded file exceeds the size limit.",
+        422: "Invalid request fields or uploaded files.",
+        429: "Analysis queue is full; retry later.",
+        503: "Model is not configured.",
+    }
+    return {code: {"model": ErrorResponse, "description": descriptions[code]} for code in codes}
 
 
 class ApiProblem(Exception):
@@ -85,7 +100,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                              warnings=[warning for d in documents for warning in d.warnings])
                 if any(not any(e.version == side for e in evidence) for side in ("before", "after")):
                     raise ApiProblem(422, "no_readable_text", "Не удалось прочитать текст хотя бы в одном из комплектов. Проверьте файлы; OCR пока не подключён.")
-                if sum(len(e.quote) + len(e.context) for e in evidence) > settings.max_total_chars:
+                if source_characters(evidence) > settings.max_total_chars:
                     raise ApiProblem(413, "text_limit", "Комплект превышает лимит текста первой версии. Уменьшите число или размер документов.")
                 store.update(analysis_id, stage="verifying")
                 result = await asyncio.wait_for(run_agent(documents, evidence, settings), timeout=settings.analysis_timeout_seconds)
@@ -116,12 +131,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 logger.error("Analysis failed (%s)", type(error).__name__)
                 store.update(analysis_id, status="failed", error={"code": "analysis_failed", "message": "Анализ не завершён. Попробуйте повторить обработку.", "retryable": True})
 
-    @app.get("/api/health")
+    @app.get("/api/health", response_model=HealthResponse)
     def health():
         return {"status": "ok", "contract_version": "r1", "model": settings.model,
                 "model_configured": bool(settings.api_key), "supported_extensions": sorted(SUPPORTED_EXTENSIONS)}
 
-    @app.post("/api/analyses", status_code=202, response_model=AnalysisAccepted)
+    @app.post("/api/analyses", status_code=202, response_model=AnalysisAccepted,
+              responses=error_responses(400, 409, 413, 422, 429, 503))
     async def create_analysis(background_tasks: BackgroundTasks,
                               before_files: Annotated[list[UploadFile], File()],
                               after_files: Annotated[list[UploadFile], File()],
@@ -169,19 +185,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         background_tasks.add_task(process, analysis_id, files)
         return {"analysis_id": analysis_id, "status": "queued", "contract_version": "r1"}
 
-    @app.get("/api/analyses/{analysis_id}", response_model=AnalysisStatus)
+    @app.get("/api/analyses/{analysis_id}", response_model=AnalysisStatus,
+             responses=error_responses(404, 422))
     def analysis_status(analysis_id: str):
         record = get_record(analysis_id)
         return {key: record.get(key) for key in ("analysis_id", "contract_version", "status", "stage", "documents", "warnings", "error", "usage")}
 
-    @app.get("/api/analyses/{analysis_id}/report", response_model=Report)
+    @app.get("/api/analyses/{analysis_id}/report", response_model=Report,
+             responses=error_responses(404, 409, 422))
     def analysis_report(analysis_id: str):
         record = get_record(analysis_id)
         if record["status"] != "completed":
             raise ApiProblem(409, "report_not_ready", "Отчёт ещё не готов. Проверьте состояние анализа.")
         return record["report"]
 
-    @app.get("/api/analyses/{analysis_id}/evidence/{evidence_id}", response_model=Evidence)
+    @app.get("/api/analyses/{analysis_id}/evidence/{evidence_id}", response_model=Evidence,
+             responses=error_responses(404, 422))
     def get_evidence(analysis_id: str, evidence_id: str):
         record = get_record(analysis_id)
         evidence = record["evidence"].get(evidence_id)

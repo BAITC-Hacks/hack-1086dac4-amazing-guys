@@ -127,6 +127,18 @@ class ApiError(StrictModel):
     retryable: bool
 
 
+class ErrorResponse(StrictModel):
+    error: ApiError
+
+
+class HealthResponse(StrictModel):
+    status: Literal["ok"]
+    contract_version: Literal["r1"]
+    model: str
+    model_configured: bool
+    supported_extensions: list[str]
+
+
 class AnalysisAccepted(StrictModel):
     analysis_id: str
     contract_version: Literal["r1"]

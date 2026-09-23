@@ -8,6 +8,7 @@ from pathlib import PurePosixPath
 import re
 from typing import Literal
 from zipfile import ZipFile
+from xml.etree import ElementTree
 
 from .models import Document, Evidence, Locator
 
@@ -72,10 +73,13 @@ def _inspect_zip(data: bytes) -> tuple[list[str], list[str]]:
                 if name == "word/document.xml":
                     if any(tag in xml for tag in (b"<w:ins ", b"<w:del ", b"<w:txbxContent", b"<w:altChunk")):
                         warnings.append("В Word есть исправления, текстовые поля или встроенные блоки; их содержимое может быть извлечено не полностью.")
+                if name.startswith(("word/header", "word/footer", "word/footnotes", "word/endnotes")):
+                    # PAGE fields and separator-only footnotes do not omit source prose.
+                    tree = ElementTree.fromstring(xml)
+                    if any((node.text or "").strip() for node in tree.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t")):
+                        warnings.append("Колонтитулы и сноски Word содержат текст, не включённый в извлечение; проверьте их отдельно.")
         if any("/media/" in name or "/drawings/" in name for name in names):
             warnings.append("В документе есть изображения или графические объекты. Их содержимое не распознано; OCR не выполнялся.")
-        if any(name.startswith(("word/header", "word/footer", "word/footnotes", "word/endnotes")) for name in names):
-            warnings.append("Колонтитулы и сноски Word не включены в извлечение; проверьте их отдельно.")
     return names, warnings
 
 

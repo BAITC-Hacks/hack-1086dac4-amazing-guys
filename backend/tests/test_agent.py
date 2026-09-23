@@ -72,6 +72,10 @@ def test_real_tool_contract_and_structured_report(monkeypatch, data):
     assert api.create.call_args.kwargs["store"] is False
     assert api.parse.call_args.kwargs["text_format"] is ReportPayload
     assert any(x.get("type") == "function_call_output" for x in api.parse.call_args.kwargs["input"])
+    packed = json.loads(api.create.call_args.kwargs["input"][0]["content"])
+    assert len(packed["sources"]) == 2
+    assert api.create.call_args.kwargs["max_output_tokens"] == 2048
+    assert api.parse.call_args.kwargs["max_output_tokens"] == Settings().max_output_tokens
 
 
 @pytest.mark.parametrize("kwargs,code", [({"api_key": ""}, "missing_api_key"), ({"model": "unknown"}, "unsupported_model"), ({"max_analysis_cost_usd": 0.000001}, "cost_limit"), ({"max_model_calls": 1}, "invalid_configuration")])
@@ -202,3 +206,48 @@ def test_timeout_is_safe_and_retryable(monkeypatch, data):
     assert error.value.code == "model_timeout" and error.value.retryable
     assert error.value.usage.calls == 1
     assert error.value.usage.estimated_cost_usd is None
+
+
+def test_long_context_usage_uses_long_context_rates(monkeypatch, data):
+    docs, sources, payload = data
+    out = response(call=tool())
+    out.usage.input_tokens = 280_000
+    out.usage.output_tokens = 100
+    api = install(monkeypatch, [out], payload)
+    result = asyncio.run(agent.run_agent(docs, sources, settings()))
+    # Long first call: $0.20/$0.75, short report call: $0.10/$0.50.
+    assert result.usage.estimated_cost_usd == pytest.approx(0.05611)
+
+
+def test_source_limit_applies_before_network_without_counting_context(monkeypatch, data):
+    docs, sources, payload = data
+    api = install(monkeypatch, [response(call=tool())], payload)
+    for source in sources:
+        source.context = "neighbour " * 1000
+    result = asyncio.run(agent.run_agent(docs, sources, settings(max_total_chars=100)))
+    assert result.usage.calls == 2
+    api.create.reset_mock()
+    with pytest.raises(agent.AgentFailure) as error:
+        asyncio.run(agent.run_agent(docs, sources, settings(max_total_chars=1)))
+    assert error.value.code == "input_limit"
+    api.create.assert_not_called()
+
+
+@pytest.mark.parametrize("repaired", [True, False])
+def test_invalid_report_gets_one_bounded_repair(monkeypatch, data, repaired):
+    docs, sources, valid = data
+    invalid = valid.model_copy(deep=True)
+    invalid.functions[0].evidence_ids = ["paragraph-label-not-source-id"]
+    api = install(monkeypatch, [response(call=tool())], valid)
+    api.parse.side_effect = [response(payload=invalid), response(payload=valid if repaired else invalid)]
+    config = Settings(api_key="mock-only-key", max_model_calls=3)
+    if repaired:
+        result = asyncio.run(agent.run_agent(docs, sources, config))
+        assert result.usage.calls == 3
+        assert result.activity[-2].status == "rejected"
+    else:
+        with pytest.raises(agent.AgentFailure) as error:
+            asyncio.run(agent.run_agent(docs, sources, config))
+        assert error.value.code == "invalid_model_output"
+        assert error.value.usage.calls == 3
+    assert api.parse.call_count == 2

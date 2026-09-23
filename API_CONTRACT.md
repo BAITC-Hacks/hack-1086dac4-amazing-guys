@@ -4,6 +4,7 @@
 
 | Действие | HTTP | Ответ |
 | --- | --- | --- |
+| Проверить сервер | GET /api/health | status, contract_version, model, model_configured, supported_extensions |
 | Начать анализ | POST /api/analyses | multipart before_files/after_files; оба списка непустые; 202: analysis_id, status, contract_version |
 | Ход обработки | GET /api/analyses/{id} | status, stage, documents, warnings |
 | Отчёт | GET /api/analyses/{id}/report | результат или 409, пока не завершён |
@@ -13,7 +14,16 @@
 
 POST с прежним Idempotency-Key и тем же содержимым возвращает прежний анализ; с другим содержимым — 409. Новый осознанный прогон — новый ключ. GET не запускает модель.
 
-Ошибки: 422 неверный ввод, 413 лимит размера, 404 неизвестный объект, 409 конфликт состояния, 429 очередь заполнена, 503 недоступный сервис. Ошибка фонового анализа находится в error статуса failed; GET статуса возвращает 200. Тело error: code, message, retryable. Не возвращать ключи/трассировки пользователю.
+HTTP-ошибки API имеют конверт `{"error":{"code":"invalid_input","message":"…","retryable":false}}`; OpenAPI описывает его моделью ErrorResponse, включая ошибки валидации 422. Стандартный формат FastAPI `detail` не используется. Не возвращать ключи/трассировки пользователю.
+
+| Маршрут | HTTP-ошибки |
+| --- | --- |
+| POST /api/analyses | 400 некорректный multipart; 409 ключ использован с другим комплектом; 413 размер файла; 422 неверный ввод; 429 очередь заполнена; 503 ключ модели не настроен |
+| GET /api/analyses/{id} | 404 анализ не найден; 422 неверные параметры |
+| GET /api/analyses/{id}/report | 404 анализ не найден; 409 отчёт не готов; 422 неверные параметры |
+| GET /api/analyses/{id}/evidence/{evidence_id} | 404 анализ или источник не найден; 422 неверные параметры |
+
+Ошибка фонового анализа находится в `error` статуса `failed`; GET статуса возвращает 200. Это объект ApiError с полями code, message, retryable, без дополнительного вложенного error. Ошибки модели и лимит извлечённого текста относятся к фоновому анализу после принятия POST с 202.
 
 ## Отчёт
 
@@ -45,7 +55,7 @@ locator: kind (paragraph/table_cell/pdf_page/sheet_range), section, paragraph_in
 
 ## Подключение
 
-Базовый URL: http://127.0.0.1:8000. CORS: localhost/127.0.0.1 с портами 5173/3000; другие origin задаются в .env. GET /api/health не вызывает модель; model_configured означает наличие ключа, не проверку баланса.
+Базовый URL: http://127.0.0.1:8000. CORS по умолчанию: localhost/127.0.0.1 с портами 5173/4173/3000; 4173 используется для просмотра production-сборки Vite. CORS_ORIGINS в .env добавляет адреса к этим локальным origin; стандартные локальные адреса сохраняются. Разрешены GET/POST и заголовки Content-Type/Idempotency-Key, включая предварительный OPTIONS-запрос браузера. GET /api/health не вызывает модель; model_configured означает наличие ключа, не проверку баланса или доступности провайдера. Схема HealthResponse включает status="ok", contract_version="r1", model, model_configured и список supported_extensions.
 
 POST: повторяющиеся поля before_files/after_files, по 1–5 файлов, каждый до 5 МиБ. Один UUID Idempotency-Key на нажатие; сетевой повтор использует прежний ключ и порядок файлов. Новый анализ — новый ключ. Реальные этапы: extracting → verifying → reporting; matching зарезервирован.
 

@@ -45,6 +45,7 @@ import type { DemoScenario } from "./demo";
 import ChangeComparison from "./ChangeComparison";
 import { HumanReview, HumanReviewSummaryView } from "./HumanReview";
 import "./comparison-integration.css";
+import { GuestAccess } from "./components/GuestAccess";
 
 type View =
   "new" | "overview" | "documents" | "comparison" | "findings" | "conclusion";
@@ -119,16 +120,43 @@ function download(name: string, text: string, type = "application/json") {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function ExportButton({
+  busy,
+  onClick,
+}: {
+  busy: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className="secondary export-button"
+      disabled={busy}
+      aria-busy={busy}
+      aria-label={busy ? "Готовим отчёт…" : "Скачать отчёт JSON"}
+      onClick={onClick}
+    >
+      {busy ? (
+        <LoaderCircle className="spin" size={17} />
+      ) : (
+        <ArrowDownToLine size={17} />
+      )}
+      <span>{busy ? "Готовим отчёт…" : "Скачать отчёт JSON"}</span>
+    </button>
+  );
+}
+
 function UploadBox({
   version,
   files,
   onChange,
   disabled,
+  preparing,
 }: {
   version: Version;
   files: File[];
-  onChange: (files: File[]) => void;
+  onChange: (files: File[], prepare?: boolean) => void;
   disabled: boolean;
+  preparing: boolean;
 }) {
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState("");
@@ -147,7 +175,7 @@ function UploadBox({
         next.push(f);
     const message = validateFiles(next);
     setError(message);
-    if (!message) onChange(next);
+    if (!message && next.length !== files.length) onChange(next, true);
   }
   function drop(e: DragEvent) {
     e.preventDefault();
@@ -157,6 +185,7 @@ function UploadBox({
   return (
     <section
       className={`upload-box ${dragging ? "dragging" : ""}`}
+      aria-busy={preparing}
       onDragOver={(e) => {
         e.preventDefault();
         if (!disabled) setDragging(true);
@@ -202,12 +231,18 @@ function UploadBox({
         onClick={() => input.current?.click()}
       >
         <span className="upload-icon">
-          <UploadCloud size={25} />
+          {preparing ? (
+            <LoaderCircle className="spin" size={25} />
+          ) : (
+            <UploadCloud size={25} />
+          )}
         </span>
         <strong>
-          {files.length
-            ? "Добавить документы"
-            : "Выберите или перетащите файлы"}
+          {preparing
+            ? "Подготовка файлов…"
+            : files.length
+              ? "Добавить документы"
+              : "Выберите или перетащите файлы"}
         </strong>
         <span>PDF, DOCX, XLSX, TXT, MD</span>
         <small>До 5 файлов · до 5 МиБ каждый</small>
@@ -219,7 +254,10 @@ function UploadBox({
               <FileText size={19} />
               <div>
                 <strong title={f.name}>{f.name}</strong>
-                <small>{size(f.size)} · Готов к отправке</small>
+                <small>
+                  {size(f.size)} ·{" "}
+                  {preparing ? "Подготовка…" : "Готов к отправке"}
+                </small>
               </div>
               <button
                 className="icon-button"
@@ -236,6 +274,10 @@ function UploadBox({
           ))}
         </ul>
       )}
+      <p className="sr-only" role="status">
+        {files.length > 0 &&
+          (preparing ? "Подготовка файлов…" : "Файлы готовы к отправке.")}
+      </p>
       {error && (
         <p className="field-error" role="alert">
           {error}
@@ -458,6 +500,7 @@ function Inspector({
           )}
           {waiting && (
             <p className="source-loading-label" role="status">
+              <LoaderCircle className="spin" size={15} aria-hidden="true" />
               Загрузка источников…
             </p>
           )}
@@ -618,11 +661,23 @@ export default function App() {
     before: [],
     after: [],
   });
+  const [preparingFiles, setPreparingFiles] = useState<
+    Record<Version, boolean>
+  >({
+    before: false,
+    after: false,
+  });
+  const filePreparation = useRef<Partial<Record<Version, AbortController>>>({});
+  const [exporting, setExporting] = useState(false);
+  const exportController = useRef<AbortController | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
   const sourceTrigger = useRef<HTMLElement | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<"uploading" | "analyzing" | "result">(
+    "analyzing",
+  );
   const [stage, setStage] = useState<keyof typeof stageNames>("extracting");
   const [progress, setProgress] = useState<AnalysisStatus | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
@@ -633,7 +688,14 @@ export default function App() {
   const requestKey = useRef<string | null>(null);
   const analysisId = useRef<string | null>(null);
   const busyRef = useRef(false);
-  useEffect(() => () => controller.current?.abort(), []);
+  useEffect(
+    () => () => {
+      controller.current?.abort();
+      exportController.current?.abort();
+      Object.values(filePreparation.current).forEach((ac) => ac?.abort());
+    },
+    [],
+  );
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(""), 4000);
@@ -660,11 +722,26 @@ export default function App() {
     setReportMode("demo");
     setError(null);
   }
-  function changeFiles(v: Version, values: File[]) {
+  async function changeFiles(v: Version, values: File[], prepare = false) {
+    filePreparation.current[v]?.abort();
+    const ac = new AbortController();
+    filePreparation.current[v] = ac;
     setFiles((old) => ({ ...old, [v]: values }));
+    setPreparingFiles((old) => ({ ...old, [v]: prepare }));
     requestKey.current = null;
     analysisId.current = null;
     setError(null);
+    try {
+      // Keep local selection feedback visible; file contents are read by the backend.
+      if (prepare) await delay(500, ac.signal);
+    } catch {
+      // A newer selection or unmount cancels this feedback.
+    } finally {
+      if (!ac.signal.aborted) {
+        setPreparingFiles((old) => ({ ...old, [v]: false }));
+        delete filePreparation.current[v];
+      }
+    }
   }
   function changeMode(next: "demo" | "api") {
     if (busy) return;
@@ -680,7 +757,9 @@ export default function App() {
     setBusy(false);
     setToast(
       mode === "api"
-        ? "Ожидание остановлено. Сервер может продолжать обработку; повтор продолжит ожидание."
+        ? phase === "result"
+          ? "Открытие результата остановлено. Повтор откроет готовый отчёт."
+          : "Ожидание остановлено. Сервер может продолжать обработку; повтор продолжит ожидание."
         : "Демонстрация остановлена.",
     );
   }
@@ -691,6 +770,7 @@ export default function App() {
     const ac = new AbortController();
     controller.current = ac;
     setBusy(true);
+    setPhase("analyzing");
     setError(null);
     setProgress(null);
     setSelection(null);
@@ -723,7 +803,8 @@ export default function App() {
     }
   }
   async function runApi() {
-    if (busyRef.current) return;
+    if (busyRef.current || preparingFiles.before || preparingFiles.after)
+      return;
     const validation =
       validateFiles(files.before) ||
       validateFiles(files.after) ||
@@ -738,6 +819,7 @@ export default function App() {
     const ac = new AbortController();
     controller.current = ac;
     setBusy(true);
+    setPhase(analysisId.current ? "analyzing" : "uploading");
     setError(null);
     setProgress(null);
     setStage("extracting");
@@ -753,6 +835,7 @@ export default function App() {
         );
         analysisId.current = accepted.analysis_id;
       }
+      setPhase("analyzing");
       const deadline = Date.now() + 10 * 60_000;
       while (Date.now() < deadline) {
         const status = await api.status(analysisId.current, ac.signal);
@@ -770,13 +853,16 @@ export default function App() {
         }
         if (status.status === "completed") {
           try {
+            setPhase("result");
             const next = await api.report(analysisId.current, ac.signal);
+            await delay(400, ac.signal);
             setReport(next);
             setReportMode("api");
             navigate("overview");
             return;
           } catch (e) {
             if (!(e instanceof ApiError) || e.status !== 409) throw e;
+            setPhase("analyzing");
           }
         }
         await delay(1400, ac.signal);
@@ -812,23 +898,39 @@ export default function App() {
     sourceTrigger.current = document.activeElement as HTMLElement | null;
     setSelection(s);
   }
-  function exportReport() {
-    if (!report) return;
-    download(
-      `${reportMode === "demo" ? "DEMO-" : ""}org-review-${report.analysis_id}.json`,
-      JSON.stringify(
-        {
-          provenance:
-            reportMode === "demo"
-              ? "Авторская демонстрация. Не результат AI."
-              : "Ответ backend. Требует проверки сотрудником.",
-          ...report,
-        },
-        null,
-        2,
-      ),
-    );
-    setToast("Отчёт JSON сохранён.");
+  async function exportReport() {
+    if (!report || exportController.current) return;
+    const ac = new AbortController();
+    exportController.current = ac;
+    setExporting(true);
+    try {
+      await delay(350, ac.signal);
+      download(
+        `${reportMode === "demo" ? "DEMO-" : ""}org-review-${report.analysis_id}.json`,
+        JSON.stringify(
+          {
+            provenance:
+              reportMode === "demo"
+                ? "Авторская демонстрация. Не результат AI."
+                : "Ответ backend. Требует проверки сотрудником.",
+            ...report,
+          },
+          null,
+          2,
+        ),
+      );
+      setToast("Отчёт JSON сохранён.");
+    } catch {
+      if (!ac.signal.aborted)
+        setError(
+          new ApiError(
+            "Не удалось сохранить отчёт. Попробуйте скачать его ещё раз.",
+          ),
+        );
+    } finally {
+      if (!ac.signal.aborted) setExporting(false);
+      if (exportController.current === ac) exportController.current = null;
+    }
   }
   const isDemo = reportMode === "demo";
   const search = (value: unknown) =>
@@ -878,6 +980,21 @@ export default function App() {
   const visibleStages = stages.filter(
     (s) => mode === "demo" || s !== "matching" || stage === "matching",
   );
+  const activeStage =
+    phase === "uploading" ||
+    (phase === "analyzing" && progress?.status === "queued")
+      ? -1
+      : phase === "result"
+        ? visibleStages.length
+        : visibleStages.indexOf(stage);
+  const processingTitle =
+    phase === "uploading"
+      ? "Отправляем документы"
+      : phase === "result"
+        ? "Открываем результат"
+        : progress?.status === "queued"
+          ? "Документы в очереди"
+          : stageNames[stage];
   return (
     <div className={`app ${selection && isResult ? "has-inspector" : ""}`}>
       {mobileMenu && (
@@ -900,7 +1017,7 @@ export default function App() {
             <Files size={27} />
           </span>
           <span>
-            Контур<small>Организационные изменения</small>
+            Kontur<small lang="en">organizational intelligence</small>
           </span>
         </a>
         <div className="workspace-label">
@@ -981,15 +1098,11 @@ export default function App() {
             <span>{viewNames[view]}</span>
           </div>
           <div>
-            <span
-              className={`environment ${(!isResult ? mode === "demo" : isDemo) ? "" : "server"}`}
-            >
-              <FlaskConical size={14} />
-              {(!isResult ? mode === "demo" : isDemo)
-                ? "Демонстрация"
-                : "Backend"}
-            </span>
-            <span className="avatar">AG</span>
+            <GuestAccess
+              onEnter={() =>
+                setToast("Гостевой режим включён. Можно приступать к работе.")
+              }
+            />
           </div>
         </header>
         <main id="main-content" className="main">
@@ -1065,14 +1178,20 @@ export default function App() {
                     <UploadBox
                       version="before"
                       files={files.before}
-                      onChange={(f) => changeFiles("before", f)}
-                      disabled={busy}
+                      onChange={(f, prepare) =>
+                        changeFiles("before", f, prepare)
+                      }
+                      disabled={busy || preparingFiles.before}
+                      preparing={preparingFiles.before}
                     />
                     <UploadBox
                       version="after"
                       files={files.after}
-                      onChange={(f) => changeFiles("after", f)}
-                      disabled={busy}
+                      onChange={(f, prepare) =>
+                        changeFiles("after", f, prepare)
+                      }
+                      disabled={busy || preparingFiles.after}
+                      preparing={preparingFiles.after}
                     />
                   </div>
                   <div className="upload-footer">
@@ -1086,18 +1205,22 @@ export default function App() {
                       className="primary"
                       disabled={
                         busy ||
+                        preparingFiles.before ||
+                        preparingFiles.after ||
                         mode === "demo" ||
                         !files.before.length ||
                         !files.after.length
                       }
                       onClick={runApi}
                     >
-                      {busy ? (
+                      {busy || preparingFiles.before || preparingFiles.after ? (
                         <LoaderCircle className="spin" size={17} />
                       ) : (
                         <GitCompareArrows size={18} />
                       )}
-                      Сравнить документы
+                      {preparingFiles.before || preparingFiles.after
+                        ? "Готовим файлы…"
+                        : "Сравнить документы"}
                     </button>
                   </div>
                   {mode === "demo" ? (
@@ -1225,14 +1348,7 @@ export default function App() {
                           : "Изменения, которые можно проследить до источника."}
                   </p>
                 </div>
-                <button
-                  className="secondary export-button"
-                  aria-label="Скачать отчёт JSON"
-                  onClick={exportReport}
-                >
-                  <ArrowDownToLine size={17} />
-                  <span>Скачать отчёт JSON</span>
-                </button>
+                <ExportButton busy={exporting} onClick={exportReport} />
               </div>
               <div className="demo-ribbon">
                 <FlaskConical size={16} />
@@ -1910,10 +2026,7 @@ export default function App() {
                     <p>{report.documents.length} документа</p>
                     <p>{report.function_matches.length} соответствий функций</p>
                     <p>{report.findings.length} замечания для проверки</p>
-                    <button className="secondary" onClick={exportReport}>
-                      <ArrowDownToLine size={16} />
-                      Скачать отчёт JSON
-                    </button>
+                    <ExportButton busy={exporting} onClick={exportReport} />
                     <details className="activity">
                       <summary>
                         Действия системы <ChevronDown size={14} />
@@ -1991,32 +2104,46 @@ export default function App() {
           >
             <div className="processing-orbit">
               <div />
-              <FileSearch size={35} />
+              {phase === "uploading" ? (
+                <UploadCloud size={35} />
+              ) : phase === "result" ? (
+                <FileCheck2 size={35} />
+              ) : (
+                <FileSearch size={35} />
+              )}
             </div>
             <span className="mini-label">
               {mode === "demo" ? "Демонстрация этапов" : "Обработка документов"}
             </span>
-            <h2 id="processing-title">{stageNames[stage]}</h2>
-            <p>
-              {mode === "demo"
-                ? "Показываем подготовленный пример. AI не вызывается."
-                : "Проверяем статус на сервере. Это может занять несколько минут."}
-            </p>
+            <div className="processing-status" role="status" aria-atomic="true">
+              <h2 id="processing-title">{processingTitle}</h2>
+              <p>
+                {mode === "demo"
+                  ? "Показываем подготовленный пример. AI не вызывается."
+                  : phase === "uploading"
+                    ? "Передаём оба комплекта на сервер. Анализ начнётся после отправки."
+                    : phase === "result"
+                      ? "Получаем готовый отчёт и готовим его к просмотру."
+                      : progress?.status === "queued"
+                        ? "Сервер принял документы. Ожидаем начала анализа."
+                        : "Проверяем статус на сервере. Это может занять несколько минут."}
+              </p>
+            </div>
             <ol className="stage-list">
               {visibleStages.map((s, i) => (
                 <li
                   key={s}
                   className={
-                    i < visibleStages.indexOf(stage)
+                    i < activeStage
                       ? "done"
-                      : stage === s
+                      : i === activeStage
                         ? "current"
                         : ""
                   }
                 >
-                  {i < visibleStages.indexOf(stage) ? (
+                  {i < activeStage ? (
                     <Check size={16} />
-                  ) : stage === s ? (
+                  ) : i === activeStage ? (
                     <LoaderCircle className="spin" size={16} />
                   ) : (
                     <span className="stage-dot" />

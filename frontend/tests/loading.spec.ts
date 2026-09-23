@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import type { Page, Route } from "@playwright/test";
+import { openAnalysis } from "./helpers/analysis";
 import AxeBuilder from "@axe-core/playwright";
 import { readFileSync } from "node:fs";
 
@@ -38,7 +39,6 @@ test("file preparation prevents early submission, stays local and respects reduc
   });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
-  await page.getByRole("button", { name: "Сервер", exact: true }).click();
   await page.clock.install();
   await page.clock.pauseAt(new Date(Date.now() + 100));
   await selectFiles(page);
@@ -99,7 +99,6 @@ test("loading follows upload and server result; cancellation preserves files and
     return route.fulfill({ json: completed });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Сервер", exact: true }).click();
   await selectFiles(page);
   await page
     .getByRole("button", { name: "Сравнить документы", exact: true })
@@ -161,7 +160,7 @@ test("both export buttons share loading and rapid clicks produce one complete do
   const downloads: string[] = [];
   page.on("download", (d) => downloads.push(d.suggestedFilename()));
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/");
+  await openAnalysis(page);
   await page
     .getByRole("navigation")
     .getByRole("button", { name: "Заключение", exact: true })
@@ -185,7 +184,7 @@ test("both export buttons share loading and rapid clicks produce one complete do
   await page.clock.runFor(400);
   const file = await downloaded;
   const data = JSON.parse(readFileSync((await file.path())!, "utf8"));
-  expect(data.provenance).toContain("Не результат AI");
+  expect(data.provenance).toContain("Ответ backend");
   expect(data.function_matches).toHaveLength(7);
   await expect(
     page.getByRole("button", { name: "Скачать отчёт JSON" }).first(),

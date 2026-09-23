@@ -2,8 +2,9 @@ import { test, expect } from "@playwright/test";
 import type { Page, Route } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { readFileSync } from "node:fs";
+import { openAnalysis, mockAnalysis } from "./helpers/analysis";
 const fixture = JSON.parse(
-  readFileSync(new URL("../src/demo-data.json", import.meta.url), "utf8"),
+  readFileSync(new URL("./fixtures/report.json", import.meta.url), "utf8"),
 );
 const report = JSON.parse(
   readFileSync(
@@ -58,25 +59,8 @@ async function settleMotion(page: Page) {
     );
   });
 }
-async function demo(page: Page, scenario = "complete") {
-  await page.goto("/");
-  if (scenario !== "complete") {
-    await page.getByText("Сценарий демонстрации", { exact: true }).click();
-    await page
-      .getByLabel("Проверить состояние интерфейса")
-      .selectOption(scenario);
-  }
-  await page
-    .getByRole("button", { name: "Открыть пример", exact: true })
-    .click();
-  if (scenario !== "failed")
-    await expect(
-      page.getByRole("heading", { name: "Вся картина изменений" }),
-    ).toBeVisible();
-}
 async function upload(page: Page) {
   await page.goto("/");
-  await page.getByRole("button", { name: "Сервер", exact: true }).click();
   await page.getByLabel("Файлы до изменений", { exact: true }).setInputFiles({
     name: "before.txt",
     mimeType: "text/plain",
@@ -204,7 +188,7 @@ test("switching sources ignores late responses and returns focus to the latest r
 test("new selection cancels an unfinished close and selected states follow each view", async ({
   page,
 }) => {
-  await page.goto("/");
+  await openAnalysis(page);
   await nav(page, "Сравнение").click();
   await page.getByRole("button", { name: "Источники m1", exact: true }).click();
   await expect(page.locator(".inspector blockquote")).not.toHaveCount(0);
@@ -255,7 +239,7 @@ test("reduced motion disables transitions and mobile drawer keeps keyboard focus
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await openAnalysis(page);
   await page.getByRole("button", { name: "Открыть меню" }).click();
   await nav(page, "Сравнение").click();
   const trigger = page.getByRole("button", {
@@ -268,7 +252,7 @@ test("reduced motion disables transitions and mobile drawer keeps keyboard focus
   await expect(panel.locator("blockquote")).not.toHaveCount(0);
   expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
   await page.keyboard.press("Shift+Tab");
-  await expect(panel.locator("a").last()).toBeFocused();
+  await expect(panel.locator("button, summary").last()).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(
     page.getByRole("button", { name: "Закрыть источники", exact: true }),
@@ -283,14 +267,14 @@ test("reduced motion disables transitions and mobile drawer keeps keyboard focus
   ).toBe(true);
 });
 
-test("demo journey, exact evidence, search, registry, units and JSON download", async ({
+test("server journey, exact evidence, search, registry, units and JSON download", async ({
   page,
 }) => {
   const apiCalls: string[] = [];
   page.on("request", (r) => {
     if (r.url().includes("/api/")) apiCalls.push(r.url());
   });
-  await demo(page);
+  await openAnalysis(page);
   await nav(page, "Сравнение").click();
   await expect(page.locator("tbody tr")).toHaveCount(7);
   await page.getByLabel("Фильтр сравнения").selectOption("preserved");
@@ -319,16 +303,22 @@ test("demo journey, exact evidence, search, registry, units and JSON download", 
   await expect(page.locator(".finding-card")).toHaveCount(1);
   await nav(page, "Заключение").click();
   const downloaded = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Скачать отчёт JSON" }).first().click();
+  await page
+    .getByRole("button", { name: "Скачать отчёт JSON" })
+    .first()
+    .click();
   const file = await downloaded;
-  expect(file.suggestedFilename()).toContain("DEMO");
+  expect(file.suggestedFilename()).toBe(
+    "org-review-11111111111111111111111111111111.json",
+  );
   const json = JSON.parse(readFileSync((await file.path())!, "utf8"));
-  expect(json.provenance).toContain("Не результат AI");
+  expect(json.provenance).toContain("Ответ backend");
   expect(json.findings).toHaveLength(3);
-  expect(apiCalls).toEqual([]);
+  expect(apiCalls.some((url) => url.endsWith("/report"))).toBe(true);
+  expect(apiCalls.some((url) => url.includes("/evidence/"))).toBe(true);
 });
 
-test("uploads validate type, empty file, size and count; demo never analyzes user files", async ({
+test("uploads validate type, empty file, size and count; valid files enable analysis directly", async ({
   page,
 }) => {
   await page.goto("/");
@@ -373,7 +363,7 @@ test("uploads validate type, empty file, size and count; demo never analyzes use
     });
   await expect(
     page.getByRole("button", { name: "Сравнить документы", exact: true }),
-  ).toBeDisabled();
+  ).toBeEnabled();
   await page.getByRole("button", { name: "Удалить valid.txt" }).click();
   await expect(page.getByText("valid.txt", { exact: true })).toHaveCount(0);
 });
@@ -381,7 +371,7 @@ test("uploads validate type, empty file, size and count; demo never analyzes use
 test("partial coverage is visible and downgrades loss to insufficient evidence", async ({
   page,
 }) => {
-  await demo(page, "partial");
+  await openAnalysis(page, "partial");
   await expect(
     page.getByText("Анализ неполный", { exact: true }),
   ).toBeVisible();
@@ -397,17 +387,17 @@ test("partial coverage is visible and downgrades loss to insufficient evidence",
   await expect(page.getByText("Не прочитан", { exact: true })).toBeVisible();
 });
 
-test("demo failure can recover without showing a fabricated successful report", async ({
+test("server failure can recover without showing a fabricated successful report", async ({
   page,
 }) => {
-  await demo(page, "failed");
-  await expect(page.getByRole("alert")).toContainText("Демонстрация сбоя");
+  await openAnalysis(page, "failed");
+  await expect(page.getByRole("alert")).toContainText(
+    "Сервис анализа недоступен",
+  );
   await expect(
     page.getByRole("heading", { name: "Вся картина изменений" }),
   ).toHaveCount(0);
-  await page
-    .getByLabel("Проверить состояние интерфейса")
-    .selectOption("complete");
+  await mockAnalysis(page);
   await page.getByRole("button", { name: "Повторить", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Вся картина изменений" }),
@@ -417,7 +407,7 @@ test("demo failure can recover without showing a fabricated successful report", 
 test("empty result and unmatched search have actionable states", async ({
   page,
 }) => {
-  await demo(page, "empty");
+  await openAnalysis(page, "empty");
   await nav(page, "Сравнение").click();
   await expect(
     page.getByRole("heading", { name: "Совпадений нет" }),
@@ -543,7 +533,7 @@ test("malformed server response never renders as success", async ({ page }) => {
 
 test("mobile layout, menu and source drawer", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await demo(page);
+  await openAnalysis(page);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -566,13 +556,16 @@ test("mobile layout, menu and source drawer", async ({ page }) => {
   await expect(page.locator(".inspector")).toHaveCount(0);
 });
 
-test("all demo quotes match source files exactly", async () => {
+test("test fixture quotes match source files exactly", async () => {
   for (const e of Object.values(fixture.evidence) as Array<{
     version: string;
     evidence_id: string;
     quote: string;
   }>) {
-    const original = readFileSync(`public/demo/${e.version}.md`, "utf8");
+    const original = readFileSync(
+      `tests/fixtures/documents/${e.version}.md`,
+      "utf8",
+    );
     expect(original).toContain(`[${e.evidence_id}] ${e.quote}`);
   }
   for (const finding of fixture.report.findings)
@@ -595,9 +588,7 @@ test("accessibility: start and comparison with inspector", async ({ page }) => {
       })),
     })),
   ).toEqual([]);
-  await page
-    .getByRole("button", { name: "Открыть пример", exact: true })
-    .click();
+  await openAnalysis(page);
   await expect(
     page.getByRole("heading", { name: "Вся картина изменений" }),
   ).toBeVisible();
@@ -639,11 +630,11 @@ test("accessibility: start and comparison with inspector", async ({ page }) => {
 });
 
 for (const [section, heading] of [
-  ["Обзор", "Вся картина изменений"],
-  ["Документы", "Основание вашего анализа"],
-  ["Сравнение", "От функции к ответственности"],
-  ["Замечания", "Что требует внимания"],
-  ["Заключение", "Аналитическое заключение"],
+  ["Обзор", "Обзор анализа"],
+  ["Документы", "Документы"],
+  ["Сравнение", "Матрица соответствий"],
+  ["Замечания", "Замечания"],
+  ["Заключение", "Заключение"],
 ]) {
   test(`first visit: ${section} opens directly without starting analysis`, async ({
     page,
@@ -658,23 +649,33 @@ for (const [section, heading] of [
     await expect(
       page.getByRole("heading", { name: heading, level: 1 }),
     ).toBeVisible();
-    await expect(page.locator(".demo-ribbon")).toContainText(
-      "Результат подготовлен заранее",
+    await expect(
+      page.getByRole("heading", { name: "Отчёт ещё не получен" }),
+    ).toBeVisible();
+    await expect(page.locator(".document-strip, .export-button")).toHaveCount(
+      0,
     );
     await expect(page.getByRole("dialog")).toHaveCount(0);
     expect(apiCalls).toEqual([]);
   });
 }
 
-test("server navigation shows a useful empty state and switches to demo only explicitly", async ({
+test("only real analysis is available and navigation returns to the selected documents", async ({
   page,
 }) => {
-  const apiCalls: string[] = [];
+  const calls: string[] = [];
   page.on("request", (r) => {
-    if (r.url().includes("/api/")) apiCalls.push(r.url());
+    if (r.url().includes("/api/")) calls.push(r.url());
   });
-  await page.goto("/");
-  await page.getByRole("button", { name: "Сервер", exact: true }).click();
+  await upload(page);
+  await expect(
+    page.getByRole("button", {
+      name: /^(Демо|Сервер|Открыть пример|Посмотреть демопример)$/,
+    }),
+  ).toHaveCount(0);
+  await expect(page.locator("#scenario, .demo-card, .mode-switch")).toHaveCount(
+    0,
+  );
   for (const section of [
     "Обзор",
     "Документы",
@@ -686,30 +687,21 @@ test("server navigation shows a useful empty state and switches to demo only exp
     await expect(
       page.getByRole("heading", { name: "Отчёт ещё не получен" }),
     ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "Загрузить документы", exact: true }),
-    ).toBeVisible();
-    await expect(page.locator(".demo-ribbon")).toHaveCount(0);
+    await expect(page.locator(".document-strip, .export-button")).toHaveCount(
+      0,
+    );
   }
   await page
     .getByRole("button", { name: "Загрузить документы", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Создайте новое сравнение" }),
+    page.getByRole("button", { name: "Удалить before.txt" }),
   ).toBeVisible();
-  await nav(page, "Сравнение").click();
-  await page
-    .getByRole("button", { name: "Посмотреть демопример", exact: true })
-    .click();
   await expect(
-    page.getByRole("heading", {
-      name: "От функции к ответственности",
-      level: 1,
-    }),
+    page.getByRole("button", { name: "Удалить after.txt" }),
   ).toBeVisible();
-  await expect(page.locator("tbody tr")).toHaveCount(7);
-  await expect(page.locator(".demo-ribbon")).toContainText(
-    "модель не вызывалась",
-  );
-  expect(apiCalls).toEqual([]);
+  await expect(
+    page.getByRole("button", { name: "Сравнить документы", exact: true }),
+  ).toBeEnabled();
+  expect(calls).toEqual([]);
 });

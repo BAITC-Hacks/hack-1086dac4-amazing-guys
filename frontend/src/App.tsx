@@ -836,7 +836,8 @@ export default function App() {
         analysisId.current = accepted.analysis_id;
       }
       setPhase("analyzing");
-      const deadline = Date.now() + 10 * 60_000;
+      // Leave time for the bounded 15-minute backend analysis plus polling.
+      const deadline = Date.now() + 16 * 60_000;
       while (Date.now() < deadline) {
         const status = await api.status(analysisId.current, ac.signal);
         setProgress(status);

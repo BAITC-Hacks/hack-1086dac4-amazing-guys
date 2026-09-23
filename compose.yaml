@@ -1,0 +1,54 @@
+name: kontur
+services:
+  backend:
+    build:
+      context: .
+      target: backend
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - type: bind
+        source: ./.env
+        target: /app/.env
+        read_only: true
+        bind:
+          create_host_path: false
+      - analysis-data:/data
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+  web:
+    build:
+      context: .
+      target: frontend
+    init: true
+    ports:
+      - "127.0.0.1:${KONTUR_PORT:-8080}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8080/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+  backend-tests:
+    profiles: [checks]
+    build:
+      context: .
+      target: backend-tests
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+volumes:
+  analysis-data:

@@ -21,7 +21,7 @@ class Settings:
     max_tool_calls: int = 8
     max_output_tokens: int = 49152
     model_timeout_seconds: float = 480
-    analysis_timeout_seconds: float = 600
+    analysis_timeout_seconds: float = 900
     max_analysis_cost_usd: float = 0.25
     cors_origins: list[str] = field(default_factory=lambda: DEFAULT_ORIGINS.copy())
 

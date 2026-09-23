@@ -32,7 +32,12 @@ class Item(SimpleNamespace):
 
 
 def response(*, call=None, payload=None, status="completed", usage=True):
-    return SimpleNamespace(output=[] if call is None else [call], output_parsed=payload, status=status,
+    raw = payload.model_dump() if payload else None
+    if raw:
+        for function in raw["functions"]:
+            function["source_excerpt"] = function["action"] + " " + function["object"]
+    return SimpleNamespace(output=[] if call is None else [call], output_parsed=payload,
+                           output_text=json.dumps(raw, ensure_ascii=False) if raw else "", status=status,
                            usage=SimpleNamespace(input_tokens=100, output_tokens=50) if usage else None)
 
 
@@ -42,12 +47,15 @@ def tool(name="search_functions", args=None):
 
 def install(monkeypatch, responses, payload):
     api = SimpleNamespace(create=AsyncMock(side_effect=responses), parse=AsyncMock(return_value=response(payload=payload)))
+    async def dispatch(**kwargs):
+        # Two mock recorders for a single SDK create boundary: tool and report.
+        return await (api.parse(**kwargs) if "text" in kwargs else api.create(**kwargs))
     class Client:
         def __init__(self, **kwargs):
             assert kwargs["api_key"] == "mock-only-key"
             assert kwargs["max_retries"] == 0
             assert kwargs["base_url"] == "https://api.openai.com/v1"
-            self.responses = api
+            self.responses = SimpleNamespace(create=dispatch)
         async def __aenter__(self):
             return self
         async def __aexit__(self, *args):
@@ -70,7 +78,8 @@ def test_real_tool_contract_and_structured_report(monkeypatch, data):
     assert result.activity[0].referenced_ids == ["d2"]
     assert result.activity[-1].status == "completed_structural_only"
     assert api.create.call_args.kwargs["store"] is False
-    assert api.parse.call_args.kwargs["text_format"] is ReportPayload
+    assert api.parse.call_args.kwargs["text"]["format"]["strict"] is True
+    assert api.parse.call_args.kwargs["text"]["format"]["schema"]["$defs"]["AvailableEvidence"]["enum"] == ["e1", "e2"]
     assert any(x.get("type") == "function_call_output" for x in api.parse.call_args.kwargs["input"])
     packed = json.loads(api.create.call_args.kwargs["input"][0]["content"])
     assert len(packed["sources"]) == 2
@@ -282,3 +291,28 @@ def test_unit_guard_does_not_pretend_to_resolve_inflected_names(data):
     docs, sources, payload = data
     payload.unit_changes[0].before_unit_ids = ["Отдела А"]
     agent.validate_payload(payload, docs, sources, {"d2"})
+
+
+def test_invalid_report_text_keeps_usage_and_safe_diagnostic(monkeypatch, data):
+    docs, sources, valid = data
+    api = install(monkeypatch, [response(call=tool())], valid)
+    invalid = response(payload=valid)
+    invalid.output_text = '{"private_document_text": "MUST_NOT_LEAK"}'
+    api.parse.return_value = invalid
+    with pytest.raises(agent.AgentFailure) as error:
+        asyncio.run(agent.run_agent(docs, sources, settings()))
+    assert error.value.code == "invalid_model_output"
+    assert error.value.usage.calls == 2
+    assert error.value.usage.estimated_cost_usd == pytest.approx(0.00007)
+    assert "MUST_NOT_LEAK" not in error.value.message
+    assert "unit_changes: missing" in error.value.message
+
+
+def test_function_excerpt_rejects_real_but_wrong_source(data):
+    docs, sources, payload = data
+    sources.append(sources[0].model_copy(update={"evidence_id": "e3", "quote": "Другой отдел хранит архив."}))
+    payload.functions[0].evidence_ids = ["e3"]
+    with pytest.raises(agent.AgentFailure, match="source_excerpt.*f1"):
+        agent.validate_payload(payload, docs, sources, {"d2"}, {"f1": "готовит отчёт", "f2": "готовит отчёт"})
+    payload.functions[0].evidence_ids = ["e1"]
+    agent.validate_payload(payload, docs, sources, {"d2"}, {"f1": "готовит отчёт", "f2": "готовит отчёт"})

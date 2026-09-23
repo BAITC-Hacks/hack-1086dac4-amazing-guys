@@ -13,9 +13,9 @@ def test_packing_preserves_every_quote_reference_version_and_order():
                 for i, (d, q) in enumerate([(docs[0], "Отдел А"), (docs[0], "Проверять платежи."),
                                             (docs[1], "Отдел Б"), (docs[1], "Проверять платежи.")], 1)]
     packed = pack_sources(docs, evidence)
-    restored = [(eid, doc, packed["texts"][text]) for eid, doc, text in packed["sources"]]
+    restored = [(s["evidence_id"], s["document_id"], s["quote"]) for s in packed["sources"]]
     assert restored == [(e.evidence_id, e.document_id, e.quote) for e in evidence]
-    assert len(packed["texts"]) == 3
+    assert [s["version"] for s in packed["sources"]] == [e.version for e in evidence]
     assert packed["documents"] == [d.model_dump() for d in docs]
     assert "Neighbours" not in json.dumps(packed)
     assert source_characters(evidence) == sum(len(e.quote) for e in evidence)
@@ -31,4 +31,5 @@ def test_large_repeated_sources_fit_without_discarding_occurrences():
     assert sum(len(e.quote) + len(e.context) for e in sources) > Settings().max_total_chars
     assert source_characters(sources) < Settings().max_total_chars
     packed = pack_sources([d], sources)
-    assert len(packed["sources"]) == 981 and packed["texts"] == ["x" * 200]
+    assert len(packed["sources"]) == 981
+    assert all(s["quote"] == "x" * 200 for s in packed["sources"])

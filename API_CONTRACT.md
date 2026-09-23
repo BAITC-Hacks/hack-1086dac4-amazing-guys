@@ -1,6 +1,6 @@
 # Контракт r1
 
-Маршруты реализованы в FastAPI. Схемы: /openapi.json и fixtures/api/openapi.json; источник — backend/models.py. Общие HTTP-примеры — fixtures/api/ (авторские, с подменой модели). expected.json — эталон случаев, не HTTP-ответ. Полный живой сценарий моделью ещё не проверен.
+Маршруты реализованы в FastAPI. Схемы: /openapi.json и fixtures/api/openapi.json; источник — backend/models.py. Общие HTTP-примеры — fixtures/api/ (авторские, с подменой модели). expected.json — эталон случаев, не HTTP-ответ. Живые проверки модели и ограничения текущей версии описаны в docs/INTEGRATION_RESULTS.md.
 
 | Действие | HTTP | Ответ |
 | --- | --- | --- |
@@ -33,6 +33,7 @@ HTTP-ошибки API имеют конверт `{"error":{"code":"invalid_input
 - unit_changes: id, before_unit_ids, after_unit_ids, kind (preserved/renamed/merged/split/created/removed/unresolved), evidence_ids, explanation.
 - functions: id, version, unit_id, action, object, scope, role, evidence_ids. Неизвестное — null.
 - function_matches: id, before_function_ids, after_function_ids, status (preserved/transferred/changed/unresolved), evidence_ids, explanation.
+- Строка функции только версии after может иметь пустой before_function_ids со статусом changed/unresolved; это не доказательство появления функции во всей организации. preserved/transferred требуют функции before. Оба списка одновременно пустыми быть не могут. Каждая извлечённая функция before по-прежнему должна входить в матрицу.
 - findings: структура ниже.
 - conclusion: summary, limitations, recommendations. Существенные рекомендации содержат finding_ids/evidence_ids.
 - activity: operation, status, referenced_ids — фактические краткие события инструментов без скрытых рассуждений.

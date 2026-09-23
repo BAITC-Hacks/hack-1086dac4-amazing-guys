@@ -387,3 +387,35 @@ def test_merge_preserves_link_integrity_without_changing_unit_names(data):
     assert merged.unit_changes[0].before_unit_ids == ["Отдел А"]
     assert payload.functions[0].id == "f1"
     agent.validate_payload(merged, docs, sources, {"d2"})
+
+
+@pytest.mark.parametrize("status,allowed", [("changed", True), ("unresolved", True), ("preserved", False), ("transferred", False)])
+def test_after_only_function_row_is_not_a_claim_of_preservation(data, status, allowed):
+    docs, sources, payload = data
+    row = payload.function_matches[0].model_copy(update={"id": "new-row", "before_function_ids": [], "status": status})
+    payload.function_matches.append(row)
+    if allowed:
+        agent.validate_payload(payload, docs, sources, {"d2"})
+    else:
+        with pytest.raises(agent.AgentFailure, match="требуют функции до"):
+            agent.validate_payload(payload, docs, sources, {"d2"})
+
+
+def test_excerpt_repair_keeps_the_report_instead_of_regenerating_it(monkeypatch, data):
+    docs, sources, payload = data
+    draft = response(payload=payload)
+    raw = json.loads(draft.output_text)
+    raw["functions"][0]["source_excerpt"] = "неточная склеенная цитата"
+    draft.output_text = json.dumps(raw)
+    patch = response()
+    patch.output_text = json.dumps({"f1": "готовит отчёт"})
+    api = install(monkeypatch, [response(call=tool())], payload)
+    api.parse.side_effect = [draft, patch]
+    result = asyncio.run(agent.run_agent(docs, sources, Settings(api_key="mock-only-key", max_model_calls=3)))
+    assert result.payload == payload
+    assert result.usage.calls == 3
+    assert result.activity[-2].operation == "repair_source_excerpts"
+    assert api.parse.call_args.kwargs["text"]["format"]["name"] == "SourceExcerptPatch"
+    patch_input = json.loads(api.parse.call_args.kwargs["input"][0]["content"])
+    assert list(patch_input) == ["f1"]
+    assert patch_input["f1"]["sources"][0]["quote"] == sources[0].quote

@@ -761,7 +761,11 @@ button {
   display: block;
 }
 .results {
-  animation: reveal 0.3s ease;
+  animation: content-in 180ms ease-out;
+}
+.table-panel,
+.source-quotes {
+  animation: content-in 160ms ease-out;
 }
 .page-heading {
   display: flex;
@@ -1292,6 +1296,17 @@ tbody tr:hover {
   background: #edf4ff !important;
   box-shadow: inset 3px 0 #4f83f0;
 }
+tbody tr,
+.focus-row {
+  transition:
+    background-color 140ms ease,
+    box-shadow 140ms ease;
+}
+.finding-card {
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
 .table-link {
   text-align: left;
   padding: 0;
@@ -1676,6 +1691,61 @@ tbody tr:hover {
   display: flex;
   flex-direction: column;
   outline: 0;
+  animation: inspector-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.source-loading-label {
+  margin: 20px 0 0;
+  color: #5c708d;
+  font-size: 12px;
+}
+.evidence-skeleton {
+  margin-top: 20px;
+  border: 1px solid #e2e9f3;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+.skeleton-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 15px;
+  border-bottom: 1px solid #ecf0f7;
+  background: #fafcff;
+}
+.skeleton-heading > div {
+  flex: 1;
+}
+.skeleton-block {
+  display: block;
+  height: 9px;
+  border-radius: 3px;
+  background: #dfe6ef;
+  animation: skeleton-breathe 1600ms ease-in-out infinite;
+}
+.skeleton-block + .skeleton-block {
+  margin-top: 11px;
+}
+.skeleton-icon {
+  width: 23px;
+  height: 29px;
+}
+.skeleton-title {
+  width: 44%;
+  height: 11px;
+}
+.skeleton-subtitle {
+  width: 76%;
+}
+.skeleton-quote {
+  padding: 18px 15px 22px;
+}
+.skeleton-location {
+  width: 32%;
+  margin-bottom: 22px;
+}
+.skeleton-short {
+  width: 68%;
 }
 .inspector-top {
   display: flex;
@@ -2024,6 +2094,38 @@ tbody tr:hover {
     transform: translateY(0);
   }
 }
+@keyframes content-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes inspector-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes skeleton-breathe {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (min-width: 1101px) {
+  .workspace {
+    transition: margin-right 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
 @media (min-width: 1700px) {
   .has-inspector .workspace {
     margin-right: 440px;
@@ -2195,6 +2297,11 @@ tbody tr:hover {
     background: #172c4844;
     backdrop-filter: blur(3px);
     border-radius: 0;
+    animation: content-in 180ms ease-out;
+    transition: opacity 160ms ease-in;
+  }
+  .inspector-backdrop.is-closing {
+    opacity: 0;
   }
   .coverage-status {
     display: none;

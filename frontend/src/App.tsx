@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import type { DragEvent, ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { DragEvent, ReactNode, RefObject } from "react";
 import {
   ArrowDownToLine,
   ArrowRight,
@@ -247,26 +247,81 @@ function Inspector({
   report,
   isDemo,
   onClose,
+  returnFocusTo,
 }: {
   selection: Selection;
   report: Report;
   isDemo: boolean;
   onClose: () => void;
+  returnFocusTo: RefObject<HTMLElement | null>;
 }) {
   const [evidences, setEvidences] = useState<Evidence[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
   const [copied, setCopied] = useState("");
+  const [loadedKey, setLoadedKey] = useState("");
+  const [closing, setClosing] = useState(false);
   const ref = useRef<HTMLElement>(null);
+  const exitAnimation = useRef<Animation | null>(null);
+  const sourceKey = JSON.stringify([
+    report.analysis_id,
+    isDemo,
+    selection.id,
+    selection.evidence_ids,
+    retry,
+  ]);
+  const waiting = loading || loadedKey !== sourceKey;
+  const dismiss = useCallback(() => {
+    if (exitAnimation.current) return;
+    if (
+      !ref.current ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      onClose();
+      return;
+    }
+    setClosing(true);
+    const style = getComputedStyle(ref.current);
+    const animation = ref.current.animate(
+      [
+        { opacity: style.opacity, transform: style.transform },
+        { opacity: 0, transform: "translateX(20px)" },
+      ],
+      { duration: 160, easing: "ease-in", fill: "forwards" },
+    );
+    exitAnimation.current = animation;
+    void animation.finished
+      .then(() => {
+        if (exitAnimation.current === animation) onClose();
+      })
+      .catch(() => {
+        /* A new selection or navigation cancels the exit. */
+      });
+  }, [onClose]);
   useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
+    exitAnimation.current?.cancel();
+    exitAnimation.current = null;
+    setClosing(false);
     ref.current?.focus();
-    return () => previous?.focus();
-  }, []);
+    ref.current?.querySelector(".inspector-body")?.scrollTo(0, 0);
+  }, [selection]);
+  useEffect(() => {
+    const panel = ref.current;
+    return () => {
+      exitAnimation.current?.cancel();
+      const active = document.activeElement;
+      if (
+        (active === document.body || panel?.contains(active)) &&
+        returnFocusTo.current?.isConnected
+      ) {
+        returnFocusTo.current.focus({ preventScroll: true });
+      }
+    };
+  }, [returnFocusTo]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") dismiss();
       if (e.key === "Tab" && window.innerWidth <= 1100) {
         const items = [
           ...(ref.current?.querySelectorAll<HTMLElement>(
@@ -275,7 +330,11 @@ function Inspector({
         ].filter((x) => x.getClientRects().length);
         const first = items[0],
           last = items.at(-1);
-        if (e.shiftKey && document.activeElement === first) {
+        if (
+          e.shiftKey &&
+          (document.activeElement === first ||
+            document.activeElement === ref.current)
+        ) {
           e.preventDefault();
           last?.focus();
         } else if (!e.shiftKey && document.activeElement === last) {
@@ -286,7 +345,7 @@ function Inspector({
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [dismiss]);
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
@@ -311,11 +370,21 @@ function Inspector({
             e instanceof Error ? e.message : "Не удалось загрузить источник.",
           );
       } finally {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoadedKey(sourceKey);
+          setLoading(false);
+        }
       }
     })();
     return () => controller.abort();
-  }, [selection.id, selection.evidence_ids, report.analysis_id, isDemo, retry]);
+  }, [
+    selection.id,
+    selection.evidence_ids,
+    report.analysis_id,
+    isDemo,
+    retry,
+    sourceKey,
+  ]);
   async function copy(e: Evidence) {
     try {
       await navigator.clipboard.writeText(
@@ -329,12 +398,14 @@ function Inspector({
   return (
     <>
       <button
-        className="inspector-backdrop"
+        className={`inspector-backdrop${closing ? " is-closing" : ""}`}
+        tabIndex={-1}
         aria-label="Закрыть панель источников"
-        onClick={onClose}
+        onClick={dismiss}
       />
       <aside
         ref={ref}
+        id="source-inspector"
         tabIndex={-1}
         className="inspector"
         aria-label="Проверка по источнику"
@@ -346,7 +417,7 @@ function Inspector({
           <button
             className="icon-button"
             aria-label="Закрыть источники"
-            onClick={onClose}
+            onClick={dismiss}
           >
             <X size={19} />
           </button>
@@ -367,76 +438,118 @@ function Inspector({
               Цитаты авторского примера. Не результат AI.
             </div>
           )}
-          {loading && (
-            <div className="loading-inline" role="status">
-              <LoaderCircle className="spin" />
+          {waiting && (
+            <p className="source-loading-label" role="status">
               Загрузка источников…
-            </div>
+            </p>
           )}
-          {error && (
-            <Alert danger>
-              {error}
-              <button
-                className="text-button"
-                onClick={() => setRetry((x) => x + 1)}
-              >
-                Повторить загрузку
-              </button>
-            </Alert>
-          )}
-          {!loading && !error && !evidences.length && (
-            <Empty
-              title="Источники не указаны"
-              text="Для этого вывода сервер не предоставил ссылки. Требуется уточнение."
-            />
-          )}
-          {evidences.map((e) => (
-            <article className={`evidence ${e.version}`} key={e.evidence_id}>
-              <div className="evidence-head">
-                <FileText size={19} />
-                <div>
-                  <strong>
-                    {e.version === "before"
-                      ? "До изменений"
-                      : "После изменений"}
-                  </strong>
-                  <small>{e.document_name}</small>
-                </div>
-                <button
-                  className="icon-button"
-                  aria-label={`Копировать цитату ${e.evidence_id}`}
-                  onClick={() => copy(e)}
-                >
-                  {copied === e.evidence_id ? (
-                    <Check size={16} />
-                  ) : (
-                    <Copy size={16} />
+          <div className="source-content" aria-busy={waiting}>
+            {waiting && (
+              <div className="source-loading">
+                <div aria-hidden="true">
+                  {Array.from(
+                    {
+                      length: Math.min(
+                        3,
+                        Math.max(1, unique(selection.evidence_ids).length),
+                      ),
+                    },
+                    (_, i) => (
+                      <div className="evidence-skeleton" key={i}>
+                        <div className="skeleton-heading">
+                          <span className="skeleton-block skeleton-icon" />
+                          <div>
+                            <span className="skeleton-block skeleton-title" />
+                            <span className="skeleton-block skeleton-subtitle" />
+                          </div>
+                        </div>
+                        <div className="skeleton-quote">
+                          <span className="skeleton-block skeleton-location" />
+                          <span className="skeleton-block" />
+                          <span className="skeleton-block" />
+                          <span className="skeleton-block skeleton-short" />
+                        </div>
+                      </div>
+                    ),
                   )}
-                </button>
+                </div>
               </div>
-              <div className="evidence-location">{locationLabel(e)}</div>
-              <blockquote>{e.quote}</blockquote>
-              {e.extraction_warning && <Alert>{e.extraction_warning}</Alert>}
-              <details>
-                <summary>
-                  Показать контекст <ChevronDown size={14} />
-                </summary>
-                <p className="context">
-                  {e.context || "Дополнительный контекст не предоставлен."}
-                </p>
-              </details>
-              {isDemo && (
-                <a
-                  className="source-link"
-                  href={`/demo/${e.version}.md`}
-                  target="_blank"
-                  rel="noreferrer"
+            )}
+            {!waiting && error && (
+              <Alert danger>
+                {error}
+                <button
+                  className="text-button"
+                  onClick={() => setRetry((x) => x + 1)}
                 >
-                  Открыть исходный текст <ArrowUpRight size={14} />
-                </a>
-              )}
-            </article>
-          ))}
+                  Повторить загрузку
+                </button>
+              </Alert>
+            )}
+            {!waiting && !error && !evidences.length && (
+              <Empty
+                title="Источники не указаны"
+                text="Для этого вывода сервер не предоставил ссылки. Требуется уточнение."
+              />
+            )}
+            {!waiting && (
+              <div className="source-quotes" key={sourceKey}>
+                {evidences.map((e) => (
+                  <article
+                    className={`evidence ${e.version}`}
+                    key={e.evidence_id}
+                  >
+                    <div className="evidence-head">
+                      <FileText size={19} />
+                      <div>
+                        <strong>
+                          {e.version === "before"
+                            ? "До изменений"
+                            : "После изменений"}
+                        </strong>
+                        <small>{e.document_name}</small>
+                      </div>
+                      <button
+                        className="icon-button"
+                        aria-label={`Копировать цитату ${e.evidence_id}`}
+                        onClick={() => copy(e)}
+                      >
+                        {copied === e.evidence_id ? (
+                          <Check size={16} />
+                        ) : (
+                          <Copy size={16} />
+                        )}
+                      </button>
+                    </div>
+                    <div className="evidence-location">{locationLabel(e)}</div>
+                    <blockquote>{e.quote}</blockquote>
+                    {e.extraction_warning && (
+                      <Alert>{e.extraction_warning}</Alert>
+                    )}
+                    <details>
+                      <summary>
+                        Показать контекст <ChevronDown size={14} />
+                      </summary>
+                      <p className="context">
+                        {e.context ||
+                          "Дополнительный контекст не предоставлен."}
+                      </p>
+                    </details>
+                    {isDemo && (
+                      <a
+                        className="source-link"
+                        href={`/demo/${e.version}.md`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Открыть исходный текст <ArrowUpRight size={14} />
+                      </a>
+                    )}
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
           {!!selection.checked_after_document_ids?.length && (
             <div className="scope-note">
               <strong>Проверенный комплект «после»</strong>
@@ -477,6 +590,7 @@ export default function App() {
     after: [],
   });
   const [selection, setSelection] = useState<Selection | null>(null);
+  const sourceTrigger = useRef<HTMLElement | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const [busy, setBusy] = useState(false);
@@ -666,6 +780,7 @@ export default function App() {
     analysisId.current = null;
   }
   function open(s: Selection) {
+    sourceTrigger.current = document.activeElement as HTMLElement | null;
     setSelection(s);
   }
   function exportReport() {
@@ -1052,7 +1167,7 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <div id="page-content" className="results">
+            <div id="page-content" className="results" key={view}>
               <div className="page-heading">
                 <div>
                   <div className="eyebrow">
@@ -1203,7 +1318,7 @@ export default function App() {
                       {report.findings.length ? (
                         report.findings.map((f, i) => (
                           <button
-                            className="focus-row"
+                            className={`focus-row${selection?.id === f.id ? " selected-row" : ""}`}
                             key={f.id}
                             onClick={() => open({ ...f, status: f.type })}
                           >
@@ -1364,7 +1479,7 @@ export default function App() {
                       </select>
                     </label>
                   </div>
-                  <section className="panel table-panel">
+                  <section className="panel table-panel" key={tab}>
                     <div className="table-scroll">
                       <table>
                         <thead>
@@ -1429,7 +1544,12 @@ export default function App() {
                             ))}
                           {tab === "units" &&
                             units.map((u) => (
-                              <tr key={u.id}>
+                              <tr
+                                key={u.id}
+                                className={
+                                  selection?.id === u.id ? "selected-row" : ""
+                                }
+                              >
                                 <td>
                                   <button
                                     className="table-link"
@@ -1471,7 +1591,12 @@ export default function App() {
                             ))}
                           {tab === "registry" &&
                             registry.map((f) => (
-                              <tr key={f.id}>
+                              <tr
+                                key={f.id}
+                                className={
+                                  selection?.id === f.id ? "selected-row" : ""
+                                }
+                              >
                                 <td>
                                   <button
                                     className="table-link"
@@ -1820,6 +1945,7 @@ export default function App() {
           report={report}
           isDemo={isDemo}
           onClose={() => setSelection(null)}
+          returnFocusTo={sourceTrigger}
         />
       )}
       {busy && (

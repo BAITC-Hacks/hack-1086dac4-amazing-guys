@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import type { Page } from "@playwright/test";
+import type { Page, Route } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { readFileSync } from "node:fs";
 const fixture = JSON.parse(
@@ -46,6 +46,18 @@ const nav = (page: Page, name: string) =>
   page
     .getByRole("navigation", { name: "Основная навигация" })
     .getByRole("button", { name, exact: true });
+const activeSources = (pending: Route[]) =>
+  pending.filter((route) => !route.request().failure());
+async function settleMotion(page: Page) {
+  await page.evaluate(async () => {
+    await Promise.allSettled(
+      document
+        .getAnimations()
+        .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+        .map((a) => a.finished),
+    );
+  });
+}
 async function demo(page: Page, scenario = "complete") {
   await page.goto("/");
   if (scenario !== "complete") {
@@ -78,6 +90,198 @@ async function upload(page: Page) {
       buffer: Buffer.from("Отдел Б готовит отчёт."),
     });
 }
+
+async function reportWithPendingSources(page: Page, pending: Route[]) {
+  await page.route("http://127.0.0.1:8000/**", (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === "POST")
+      return route.fulfill({ status: 202, json: accepted });
+    if (path.endsWith("/report")) return route.fulfill({ json: report });
+    if (path.includes("/evidence/")) {
+      pending.push(route);
+      return;
+    }
+    return route.fulfill({ json: completed });
+  });
+  await upload(page);
+  await page
+    .getByRole("button", { name: "Сравнить документы", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Вся картина изменений" }),
+  ).toBeVisible();
+  await nav(page, "Сравнение").click();
+}
+
+test("slow sources show skeletons, failure clears them and retry recovers", async ({
+  page,
+}) => {
+  const pending: Route[] = [];
+  await reportWithPendingSources(page, pending);
+  await page.getByRole("button", { name: "Источники m1", exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText("Загрузка источников…");
+  await expect(page.locator(".evidence-skeleton")).toHaveCount(2);
+  await expect(page.locator(".source-content")).toHaveAttribute(
+    "aria-busy",
+    "true",
+  );
+  await expect(page.locator(".inspector blockquote")).toHaveCount(0);
+  await expect.poll(() => activeSources(pending).length).toBe(2);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect(
+    await page
+      .locator(".skeleton-block")
+      .first()
+      .evaluate((el) => getComputedStyle(el).animationName),
+  ).toBe("none");
+  for (const route of pending.splice(0)) await route.abort("failed");
+  await expect(page.locator(".inspector").getByRole("alert")).toContainText(
+    "Сервер не ответил",
+  );
+  await expect(page.locator(".evidence-skeleton")).toHaveCount(0);
+  await expect(page.locator(".source-content")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await page.getByRole("button", { name: "Повторить загрузку" }).click();
+  await expect(page.locator(".evidence-skeleton")).toHaveCount(2);
+  await expect.poll(() => activeSources(pending).length).toBe(2);
+  for (const route of pending.splice(0)) {
+    await route.fulfill({
+      json: route.request().url().includes("doc-001")
+        ? evidenceBefore
+        : evidenceAfter,
+    });
+  }
+  await expect(page.locator(".inspector blockquote")).toHaveText([
+    evidenceBefore.quote,
+    evidenceAfter.quote,
+  ]);
+  await expect(page.locator(".evidence-skeleton")).toHaveCount(0);
+  await expect(page.locator(".source-content")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+});
+
+test("switching sources ignores late responses and returns focus to the latest row", async ({
+  page,
+}) => {
+  const pending: Route[] = [];
+  await reportWithPendingSources(page, pending);
+  await page.getByRole("tab", { name: /Реестр функций/ }).click();
+  const first = page.locator("tbody .table-link").nth(0);
+  const second = page.locator("tbody .table-link").nth(1);
+  await first.click();
+  await expect.poll(() => activeSources(pending).length).toBe(1);
+  const oldSource = activeSources(pending)[0];
+  await second.click();
+  await expect
+    .poll(() =>
+      activeSources(pending).some((r) => r.request().url().includes("doc-002")),
+    )
+    .toBe(true);
+  await expect(page.locator("tbody tr").nth(1)).toHaveClass("selected-row");
+  await expect(page.locator("tbody tr").nth(0)).not.toHaveClass("selected-row");
+  await expect(page.locator(".inspector blockquote")).toHaveCount(0);
+  const newSource = activeSources(pending).find((r) =>
+    r.request().url().includes("doc-002"),
+  )!;
+  await newSource.fulfill({ json: evidenceAfter });
+  await expect(page.locator(".inspector blockquote")).toHaveText([
+    evidenceAfter.quote,
+  ]);
+  await oldSource.fulfill({ json: evidenceBefore });
+  await expect(page.locator(".inspector blockquote")).toHaveText([
+    evidenceAfter.quote,
+  ]);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".inspector")).toHaveCount(0);
+  await expect(second).toBeFocused();
+});
+
+test("new selection cancels an unfinished close and selected states follow each view", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await nav(page, "Сравнение").click();
+  await page.getByRole("button", { name: "Источники m1", exact: true }).click();
+  await expect(page.locator(".inspector blockquote")).not.toHaveCount(0);
+  // Two actions in consecutive tasks, before the 160 ms exit can complete.
+  await page.evaluate(() => {
+    document
+      .querySelector<HTMLButtonElement>('[aria-label="Закрыть источники"]')!
+      .click();
+    setTimeout(() => {
+      const next = document.querySelector<HTMLButtonElement>(
+        '[aria-label="Источники m2"]',
+      )!;
+      next.focus();
+      next.click();
+    }, 0);
+  });
+  await expect(page.locator(".inspector blockquote").first()).toHaveText(
+    fixture.evidence["B-FUN-02"].quote,
+  );
+  // Finish pending motion before checking that the old close did not remove the new selection.
+  await page.locator(".inspector").evaluate(async (el) => {
+    await Promise.allSettled(el.getAnimations().map((a) => a.finished));
+  });
+  await expect(page.locator("tbody .selected-row")).toContainText("Архивный");
+  await expect(page.locator(".inspector")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Закрыть источники", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Источники m2", exact: true }),
+  ).toBeFocused();
+  await page.getByRole("tab", { name: /Подразделения/ }).click();
+  await page.locator("tbody .table-link").first().click();
+  await expect(page.locator("tbody tr").first()).toHaveClass("selected-row");
+  await nav(page, "Обзор").click();
+  await page.locator(".focus-row").first().click();
+  await expect(page.locator(".focus-row").first()).toHaveClass(/selected-row/);
+  await nav(page, "Замечания 3").click();
+  await page
+    .getByRole("button", { name: "Проверить основания" })
+    .first()
+    .click();
+  await expect(page.locator(".finding-card").first()).toHaveClass(/chosen/);
+});
+
+test("reduced motion disables transitions and mobile drawer keeps keyboard focus", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Открыть меню" }).click();
+  await nav(page, "Сравнение").click();
+  const trigger = page.getByRole("button", {
+    name: "Источники m1",
+    exact: true,
+  });
+  await trigger.click();
+  const panel = page.locator(".inspector");
+  await expect(panel).toBeFocused();
+  await expect(panel.locator("blockquote")).not.toHaveCount(0);
+  expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
+  await page.keyboard.press("Shift+Tab");
+  await expect(panel.locator("a").last()).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(
+    page.getByRole("button", { name: "Закрыть источники", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
 
 test("demo journey, exact evidence, search, registry, units and JSON download", async ({
   page,
@@ -378,6 +582,7 @@ test("all demo quotes match source files exactly", async () => {
 
 test("accessibility: start and comparison with inspector", async ({ page }) => {
   await page.goto("/");
+  await settleMotion(page);
   const start = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
     .analyze();
@@ -398,6 +603,7 @@ test("accessibility: start and comparison with inspector", async ({ page }) => {
   ).toBeVisible();
   for (const screen of ["Обзор", "Документы", "Замечания 3", "Заключение"]) {
     await nav(page, screen).click();
+    await settleMotion(page);
     const audit = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
       .analyze();
@@ -416,6 +622,8 @@ test("accessibility: start and comparison with inspector", async ({ page }) => {
   }
   await nav(page, "Сравнение").click();
   await page.getByRole("button", { name: "Источники m1", exact: true }).click();
+  await expect(page.locator(".inspector blockquote")).not.toHaveCount(0);
+  await settleMotion(page);
   const result = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
     .analyze();

@@ -1198,11 +1198,11 @@ export default function App() {
                 </div>
                 <button
                   className="secondary export-button"
-                  aria-label="Скачать JSON"
+                  aria-label="Скачать отчёт PDF"
                   onClick={exportReport}
                 >
                   <ArrowDownToLine size={17} />
-                  <span>Скачать JSON</span>
+                  <span>Скачать отчёт PDF</span>
                 </button>
               </div>
               <div className="demo-ribbon">
@@ -1879,7 +1879,7 @@ export default function App() {
                     <p>{report.findings.length} замечания для проверки</p>
                     <button className="secondary" onClick={exportReport}>
                       <ArrowDownToLine size={16} />
-                      Скачать JSON
+                      Скачать отчёт PDF
                     </button>
                     <details className="activity">
                       <summary>

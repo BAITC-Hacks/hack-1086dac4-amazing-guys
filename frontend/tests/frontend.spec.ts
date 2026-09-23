@@ -319,7 +319,7 @@ test("demo journey, exact evidence, search, registry, units and JSON download", 
   await expect(page.locator(".finding-card")).toHaveCount(1);
   await nav(page, "Заключение").click();
   const downloaded = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Скачать JSON" }).first().click();
+  await page.getByRole("button", { name: "Скачать отчёт PDF" }).first().click();
   const file = await downloaded;
   expect(file.suggestedFilename()).toContain("DEMO");
   const json = JSON.parse(readFileSync((await file.path())!, "utf8"));

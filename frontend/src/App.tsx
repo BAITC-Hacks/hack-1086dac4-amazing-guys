@@ -581,11 +581,11 @@ function Inspector({
                     {isDemo && (
                       <a
                         className="source-link"
-                        href={`/demo/${e.version}.md`}
+                        href={`/demo/${e.version}.pdf`}
                         target="_blank"
                         rel="noreferrer"
                       >
-                        Открыть исходный текст <ArrowUpRight size={14} />
+                        Открыть исходный PDF <ArrowUpRight size={14} />
                       </a>
                     )}
                   </article>
@@ -1895,11 +1895,11 @@ export default function App() {
                                   ) && (
                                     <a
                                       className="source-link"
-                                      href={`/demo/${v}.md`}
+                                      href={`/demo/${v}.pdf`}
                                       target="_blank"
                                       rel="noreferrer"
                                     >
-                                      Исходный текст <ArrowUpRight size={14} />
+                                      Исходный PDF <ArrowUpRight size={14} />
                                     </a>
                                   )}
                               </div>

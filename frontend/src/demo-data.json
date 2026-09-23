@@ -15,14 +15,14 @@
       {
         "document_id": "before",
         "version": "before",
-        "name": "before.md",
+        "name": "before.pdf",
         "extraction_status": "read",
         "warnings": []
       },
       {
         "document_id": "after",
         "version": "after",
-        "name": "after.md",
+        "name": "after.pdf",
         "extraction_status": "read",
         "warnings": []
       }
@@ -369,7 +369,7 @@
       "evidence_id": "B-ORG-01",
       "document_id": "before",
       "version": "before",
-      "document_name": "before.md",
+      "document_name": "before.pdf",
       "locator": {
         "kind": "paragraph",
         "section": "B-ORG-01",
@@ -386,7 +386,7 @@
       "evidence_id": "B-FUN-01",
       "document_id": "before",
       "version": "before",
-      "document_name": "before.md",
+      "document_name": "before.pdf",
       "locator": {
         "kind": "paragraph",
         "section": "B-FUN-01",
@@ -403,7 +403,7 @@
       "evidence_id": "B-FUN-02",
       "document_id": "before",
       "version": "before",
-      "document_name": "before.md",
+      "document_name": "before.pdf",
       "locator": {
         "kind": "paragraph",
         "section": "B-FUN-02",
@@ -420,7 +420,7 @@
       "evidence_id": "B-FUN-03",
       "document_id": "before",
       "version": "before",
-      "document_name": "before.md",
+      "document_name": "before.pdf",
       "locator": {
         "kind": "paragraph",
         "section": "B-FUN-03",
@@ -437,7 +437,7 @@
       "evidence_id": "B-FUN-04",
       "document_id": "before",
       "version": "before",
-      "document_name": "before.md",
+      "document_name": "before.pdf",
       "locator": {
         "kind": "paragraph",
         "section": "B-FUN-04",
@@ -454,7 +454,7 @@
       "evidence_id": "B-FUN-05",
       "document_id": "before",
       "version": "before",
-      "document_name": "before.md",
+      "document_name": "before.pdf",
       "locator": {
         "kind": "paragraph",
         "section": "B-FUN-05",
@@ -471,7 +471,7 @@
       "evidence_id": "B-RULE-01",
       "document_id": "before",
       "version": "before",
-      "document_name": "before.md",
+      "document_name": "before.pdf",
       "locator": {
         "kind": "paragraph",
         "section": "B-RULE-01",
@@ -488,7 +488,7 @@
       "evidence_id": "B-FUN-06",
       "document_id": "before",
       "version": "before",
-      "document_name": "before.md",
+      "document_name": "before.pdf",
       "locator": {
         "kind": "paragraph",
         "section": "B-FUN-06",
@@ -505,7 +505,7 @@
       "evidence_id": "B-FUN-07",
       "document_id": "before",
       "version": "before",
-      "document_name": "before.md",
+      "document_name": "before.pdf",
       "locator": {
         "kind": "paragraph",
         "section": "B-FUN-07",
@@ -522,7 +522,7 @@
       "evidence_id": "A-ORG-01",
       "document_id": "after",
       "version": "after",
-      "document_name": "after.md",
+      "document_name": "after.pdf",
       "locator": {
         "kind": "paragraph",
         "section": "A-ORG-01",
@@ -539,7 +539,7 @@
       "evidence_id": "A-ORG-02",
       "document_id": "after",
       "version": "after",
-      "document_name": "after.md",
+      "document_name": "after.pdf",
       "locator": {
         "kind": "paragraph",
         "section": "A-ORG-02",
@@ -556,7 +556,7 @@
       "evidence_id": "A-ORG-03",
       "document_id": "after",
       "version": "after",
-      "document_name": "after.md",
+      "document_name": "after.pdf",
       "locator": {
         "kind": "paragraph",
         "section": "A-ORG-03",
@@ -573,7 +573,7 @@
       "evidence_id": "A-FUN-01",
       "document_id": "after",
       "version": "after",
-      "document_name": "after.md",
+      "document_name": "after.pdf",
       "locator": {
         "kind": "paragraph",
         "section": "A-FUN-01",
@@ -590,7 +590,7 @@
       "evidence_id": "A-FUN-02",
       "document_id": "after",
       "version": "after",
-      "document_name": "after.md",
+      "document_name": "after.pdf",
       "locator": {
         "kind": "paragraph",
         "section": "A-FUN-02",
@@ -607,7 +607,7 @@
       "evidence_id": "A-FUN-03",
       "document_id": "after",
       "version": "after",
-      "document_name": "after.md",
+      "document_name": "after.pdf",
       "locator": {
         "kind": "paragraph",
         "section": "A-FUN-03",
@@ -624,7 +624,7 @@
       "evidence_id": "A-FUN-04",
       "document_id": "after",
       "version": "after",
-      "document_name": "after.md",
+      "document_name": "after.pdf",
       "locator": {
         "kind": "paragraph",
         "section": "A-FUN-04",
@@ -641,7 +641,7 @@
       "evidence_id": "A-FUN-05",
       "document_id": "after",
       "version": "after",
-      "document_name": "after.md",
+      "document_name": "after.pdf",
       "locator": {
         "kind": "paragraph",
         "section": "A-FUN-05",
@@ -658,7 +658,7 @@
       "evidence_id": "A-FUN-06",
       "document_id": "after",
       "version": "after",
-      "document_name": "after.md",
+      "document_name": "after.pdf",
       "locator": {
         "kind": "paragraph",
         "section": "A-FUN-06",
@@ -675,7 +675,7 @@
       "evidence_id": "A-RULE-01",
       "document_id": "after",
       "version": "after",
-      "document_name": "after.md",
+      "document_name": "after.pdf",
       "locator": {
         "kind": "paragraph",
         "section": "A-RULE-01",
@@ -692,7 +692,7 @@
       "evidence_id": "A-FUN-07",
       "document_id": "after",
       "version": "after",
-      "document_name": "after.md",
+      "document_name": "after.pdf",
       "locator": {
         "kind": "paragraph",
         "section": "A-FUN-07",
@@ -709,7 +709,7 @@
       "evidence_id": "A-FUN-08",
       "document_id": "after",
       "version": "after",
-      "document_name": "after.md",
+      "document_name": "after.pdf",
       "locator": {
         "kind": "paragraph",
         "section": "A-FUN-08",

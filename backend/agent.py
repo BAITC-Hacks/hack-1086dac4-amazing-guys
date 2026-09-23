@@ -289,7 +289,8 @@ class _Run:
         # protocol headroom; this is a conservative local estimate, not billing.
         body = _json(history) + INSTRUCTIONS + _json(TOOLS) + _json(self.report_schema)
         input_bound = len(body.encode("utf-8")) + 8192
-        output_limit = self.settings.max_output_tokens if final else min(2048, self.settings.max_output_tokens)
+        tool_output_limit = 2048 if self.settings.reasoning_effort == "none" else 8192
+        output_limit = self.settings.max_output_tokens if final else min(tool_output_limit, self.settings.max_output_tokens)
         if input_bound + output_limit > 1_000_000:
             self.fail("context_limit", "Комплект превышает допустимый объём запроса модели.")
         long_context = input_bound > 272_000
@@ -301,7 +302,7 @@ class _Run:
         self.calls += 1
         self.unaccounted_call = True
         kwargs = dict(model=self.settings.model, instructions=INSTRUCTIONS, input=history,
-                      store=False, reasoning={"effort": "none"}, max_output_tokens=output_limit)
+                      store=False, reasoning={"effort": self.settings.reasoning_effort}, max_output_tokens=output_limit)
         if final:
             response = await asyncio.wait_for(client.responses.create(**kwargs, text={"format": {
                 "type": "json_schema", "name": "ReportPayload", "strict": True,
@@ -348,6 +349,8 @@ class _Run:
             self.fail("missing_api_key", "Заполните OPENAI_API_KEY в локальном .env.")
         if self.rates is None:
             self.fail("unsupported_model", "Для выбранной модели не настроены проверенные тарифы и лимиты.")
+        if self.settings.reasoning_effort not in {"none", "low", "medium", "high", "xhigh", "max"}:
+            self.fail("invalid_configuration", "Неизвестный OPENAI_REASONING_EFFORT.")
         if self.settings.max_model_calls < 2 or self.settings.max_tool_calls < 1 or self.settings.max_output_tokens < 1:
             self.fail("invalid_configuration", "Для анализа нужны минимум два запроса модели и один вызов инструмента.")
         docs = {d.document_id: d for d in self.documents}

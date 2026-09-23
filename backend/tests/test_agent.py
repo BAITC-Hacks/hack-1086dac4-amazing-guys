@@ -83,11 +83,13 @@ def test_real_tool_contract_and_structured_report(monkeypatch, data):
     assert any(x.get("type") == "function_call_output" for x in api.parse.call_args.kwargs["input"])
     packed = json.loads(api.create.call_args.kwargs["input"][0]["content"])
     assert len(packed["sources"]) == 2
-    assert api.create.call_args.kwargs["max_output_tokens"] == 2048
+    assert api.create.call_args.kwargs["max_output_tokens"] == 8192
+    assert api.create.call_args.kwargs["reasoning"] == {"effort": "medium"}
+    assert api.parse.call_args.kwargs["reasoning"] == {"effort": "medium"}
     assert api.parse.call_args.kwargs["max_output_tokens"] == Settings().max_output_tokens
 
 
-@pytest.mark.parametrize("kwargs,code", [({"api_key": ""}, "missing_api_key"), ({"model": "unknown"}, "unsupported_model"), ({"max_analysis_cost_usd": 0.000001}, "cost_limit"), ({"max_model_calls": 1}, "invalid_configuration")])
+@pytest.mark.parametrize("kwargs,code", [({"api_key": ""}, "missing_api_key"), ({"model": "unknown"}, "unsupported_model"), ({"reasoning_effort": "invalid"}, "invalid_configuration"), ({"max_analysis_cost_usd": 0.000001}, "cost_limit"), ({"max_model_calls": 1}, "invalid_configuration")])
 def test_preflight_no_api_calls(monkeypatch, data, kwargs, code):
     docs, sources, payload = data
     api = install(monkeypatch, [], payload)
@@ -316,3 +318,31 @@ def test_function_excerpt_rejects_real_but_wrong_source(data):
         agent.validate_payload(payload, docs, sources, {"d2"}, {"f1": "готовит отчёт", "f2": "готовит отчёт"})
     payload.functions[0].evidence_ids = ["e1"]
     agent.validate_payload(payload, docs, sources, {"d2"}, {"f1": "готовит отчёт", "f2": "готовит отчёт"})
+
+
+def test_none_reasoning_remains_available_for_baseline(monkeypatch, data):
+    docs, sources, payload = data
+    api = install(monkeypatch, [response(call=tool())], payload)
+    asyncio.run(agent.run_agent(docs, sources, settings(reasoning_effort="none")))
+    assert api.create.call_args.kwargs["reasoning"] == {"effort": "none"}
+    assert api.create.call_args.kwargs["max_output_tokens"] == 2048
+    assert api.parse.call_args.kwargs["reasoning"] == {"effort": "none"}
+
+
+def test_reasoning_setting_from_local_file(monkeypatch):
+    monkeypatch.setattr("backend.config.dotenv_values", lambda _: {"OPENAI_REASONING_EFFORT": "low"})
+    monkeypatch.setenv("OPENAI_REASONING_EFFORT", "high")
+    assert Settings.from_env().reasoning_effort == "low"
+    monkeypatch.setattr("backend.config.dotenv_values", lambda _: {})
+    assert Settings.from_env().reasoning_effort == "medium"
+
+
+def test_reasoning_context_is_replayed_with_tool_result(monkeypatch, data):
+    docs, sources, payload = data
+    first = response(call=tool())
+    first.output.insert(0, Item(type="reasoning", id="r-test", summary=[], encrypted_content="test-ciphertext"))
+    api = install(monkeypatch, [first], payload)
+    asyncio.run(agent.run_agent(docs, sources, settings()))
+    history = api.parse.call_args.kwargs["input"]
+    assert any(item.get("encrypted_content") == "test-ciphertext" for item in history)
+    assert any(item.get("type") == "function_call_output" for item in history)

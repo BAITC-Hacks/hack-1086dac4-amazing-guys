@@ -12,6 +12,7 @@ DEFAULT_ORIGINS = [f"http://{host}:{port}" for port in (5173, 4173, 3000) for ho
 class Settings:
     api_key: str = field(default="", repr=False)
     model: str = "gpt-6-luna"
+    reasoning_effort: str = "medium"
     data_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "outputs" / "analyses")
     max_file_bytes: int = 5 * 1024 * 1024
     max_files_per_side: int = 5
@@ -31,6 +32,7 @@ class Settings:
             # Do not consume an inherited key belonging to another account/tool.
             api_key=(local.get("OPENAI_API_KEY") or "").strip(),
             model=(local.get("OPENAI_MODEL") or "gpt-6-luna").strip(),
+            reasoning_effort=(local.get("OPENAI_REASONING_EFFORT") or "medium").strip(),
             data_dir=Path(os.environ.get("ORG_REVIEW_DATA_DIR", str(PROJECT_ROOT / "outputs" / "analyses"))),
             cors_origins=list(dict.fromkeys(DEFAULT_ORIGINS + [x.strip() for x in (local.get("CORS_ORIGINS") or "").split(",") if x.strip()])),
         )

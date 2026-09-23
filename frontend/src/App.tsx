@@ -503,6 +503,20 @@ export default function App() {
     setFilter("all");
     setMobileMenu(false);
   }
+  function openSection(next: Exclude<View, "new">) {
+    if (!report && mode === "demo") {
+      setReport(demoReport("complete"));
+      setReportMode("demo");
+    }
+    setError(null);
+    navigate(next);
+  }
+  function showDemoInSection() {
+    setMode("demo");
+    setReport(demoReport("complete"));
+    setReportMode("demo");
+    setError(null);
+  }
   function changeFiles(v: Version, values: File[]) {
     setFiles((old) => ({ ...old, [v]: values }));
     requestKey.current = null;
@@ -762,8 +776,8 @@ export default function App() {
             <button
               key={item.id}
               className={`nav-item ${view === item.id ? "active" : ""}`}
-              disabled={!report || busy}
-              onClick={() => navigate(item.id)}
+              disabled={busy}
+              onClick={() => openSection(item.id)}
               aria-current={view === item.id ? "page" : undefined}
             >
               <item.icon size={19} />
@@ -838,7 +852,48 @@ export default function App() {
           <a className="skip-link" href="#page-content">
             К содержимому
           </a>
-          {!isResult ? (
+          {!report && view !== "new" ? (
+            <section id="page-content" className="section-placeholder">
+              <div className="page-heading">
+                <div>
+                  <div className="eyebrow">Работа со своими документами</div>
+                  <h1>{viewNames[view]}</h1>
+                  <p>Раздел доступен. Осталось выбрать данные для просмотра.</p>
+                </div>
+              </div>
+              <div className="panel no-report-panel">
+                <span className="summary-icon">
+                  <FileSearch size={26} />
+                </span>
+                <h2>Отчёт ещё не получен</h2>
+                <p>
+                  {view === "documents"
+                    ? "Загрузите документы до и после изменений. После обработки здесь появятся состав комплектов и качество чтения."
+                    : view === "comparison"
+                      ? "После анализа здесь появятся соответствия подразделений и функций со ссылками на источники."
+                      : view === "findings"
+                        ? "После анализа здесь появятся замечания, их основания и ограничения проверки."
+                        : view === "conclusion"
+                          ? "После анализа здесь появятся итоговые выводы и рекомендации с источниками."
+                          : "После анализа здесь появятся обзор изменений, сведения о документах и замечания для проверки."}
+                </p>
+                <div className="section-actions">
+                  <button className="primary" onClick={newComparison}>
+                    <UploadCloud size={18} />
+                    Загрузить документы
+                  </button>
+                  <button className="secondary" onClick={showDemoInSection}>
+                    <FlaskConical size={18} />
+                    Посмотреть демопример
+                  </button>
+                </div>
+                <div className="source-demo">
+                  Демопример работает без сервера. Для анализа своих файлов
+                  нужен запущенный backend.
+                </div>
+              </div>
+            </section>
+          ) : !isResult ? (
             <div id="page-content" className="start-page">
               <div className="intro">
                 <span className="eyebrow">

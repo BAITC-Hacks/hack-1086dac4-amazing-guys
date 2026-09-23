@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+import httpx
 
 from backend import agent
 from backend.config import Settings
@@ -66,6 +67,43 @@ def install(monkeypatch, responses, payload):
 
 def settings(**kwargs):
     return Settings(api_key="mock-only-key", max_model_calls=2, **kwargs)
+
+
+def connection_error(cause_type):
+    request = httpx.Request("POST", "https://api.openai.com/v1/responses")
+    error = agent.APIConnectionError(request=request)
+    error.__cause__ = cause_type("secret-must-not-be-logged", request=request)
+    return error
+
+
+def test_connection_setup_retries_once_without_replaying_paid_read(monkeypatch, data):
+    docs, sources, payload = data
+    api = install(monkeypatch, [connection_error(httpx.ConnectError), response(call=tool())], payload)
+    result = asyncio.run(agent.run_agent(docs, sources, settings()))
+    assert api.create.call_count == 2 and result.usage.calls == 2
+    assert any(event.operation == "reconnect_model" for event in result.activity)
+
+
+def test_repeated_connect_failure_is_bounded_and_secret_free(monkeypatch, data, caplog):
+    docs, sources, payload = data
+    api = install(monkeypatch, [connection_error(httpx.ConnectError), connection_error(httpx.ConnectError)], payload)
+    with pytest.raises(agent.AgentFailure) as error:
+        asyncio.run(agent.run_agent(docs, sources, settings()))
+    assert api.create.call_count == 2
+    assert error.value.code == "model_unavailable"
+    assert error.value.usage.estimated_cost_usd is None
+    assert "secret-must-not-be-logged" not in caplog.text + error.value.message
+
+
+@pytest.mark.parametrize("cause", [httpx.ReadError, httpx.RemoteProtocolError])
+def test_interrupted_response_is_not_replayed_or_reported_as_free(monkeypatch, data, cause):
+    docs, sources, payload = data
+    api = install(monkeypatch, [connection_error(cause)], payload)
+    with pytest.raises(agent.AgentFailure) as error:
+        asyncio.run(agent.run_agent(docs, sources, settings()))
+    assert api.create.call_count == 1
+    assert error.value.usage.estimated_cost_usd is None
+    assert "оборвалось" in error.value.message
 
 
 def test_real_tool_contract_and_structured_report(monkeypatch, data):

@@ -1,9 +1,11 @@
 """Bounded document-only agent. Citation integrity is not semantic verification."""
 import asyncio
 import json
+import logging
 import re
 from typing import Literal
 
+import httpx
 from openai import AsyncOpenAI, APIConnectionError, APIStatusError, APITimeoutError
 from pydantic import Field, ValidationError
 
@@ -14,6 +16,18 @@ from .comparison import (REVIEW_INSTRUCTIONS, comparison_blocks, review_schema,
                          scoped_review_history)
 from .models import Activity, AgentResult, Document, Evidence, ReportPayload, StrictModel, Usage
 from .report_format import report_schema
+
+logger = logging.getLogger(__name__)
+
+
+def connection_kind(error):
+    """Safe categories only: exception messages can contain credentials/URLs."""
+    cause = error.__cause__
+    if isinstance(cause, (httpx.ConnectError, httpx.ConnectTimeout)):
+        return "connect"
+    if isinstance(cause, (httpx.ReadError, httpx.RemoteProtocolError, httpx.ReadTimeout)):
+        return "response_interrupted"
+    return "connection_unknown"
 
 
 class AgentFailure(Exception):
@@ -274,6 +288,21 @@ class _Run:
         self.review = None
         self.report_scope = None
         self.repair_used = False
+        self.connection_retry_used = False
+
+    async def request_response(self, client, kwargs):
+        try:
+            return await client.responses.create(**kwargs)
+        except APIConnectionError as exc:
+            # One retry per analysis, only if HTTPX says connection setup failed.
+            # Never replay a read/protocol failure: the paid request may be running.
+            if self.connection_retry_used or connection_kind(exc) != "connect":
+                raise
+            self.connection_retry_used = True
+            logger.warning("Model connection setup failed; one bounded reconnect")
+            self.activity.append(Activity(operation="reconnect_model", status="connection_setup_failed", referenced_ids=[]))
+            await asyncio.sleep(0.5)
+            return await client.responses.create(**kwargs)
 
     def usage(self):
         cost = None if not self.rates or self.unaccounted_call else self.known_cost
@@ -354,14 +383,15 @@ class _Run:
         kwargs = dict(model=self.settings.model, instructions=instructions, input=history,
                       store=False, reasoning={"effort": self.settings.reasoning_effort}, max_output_tokens=output_limit)
         if final or review or excerpt_patch:
-            response = await asyncio.wait_for(client.responses.create(**kwargs, text={"format": {
+            kwargs["text"] = {"format": {
                 "type": "json_schema", "name": "SourceExcerptPatch" if excerpt_patch else ("ComparisonReview" if review else "ReportPayload"), "strict": True,
                 "schema": schema,
-            }}), self.settings.model_timeout_seconds)
+            }}
         else:
-            response = await asyncio.wait_for(client.responses.create(**kwargs, tools=TOOLS,
-                                                     tool_choice={"type": "function", "name": "search_functions"} if self.successes == 0 else "auto",
-                                                     parallel_tool_calls=False), self.settings.model_timeout_seconds)
+            kwargs.update(tools=TOOLS,
+                          tool_choice={"type": "function", "name": "search_functions"} if self.successes == 0 else "auto",
+                          parallel_tool_calls=False)
+        response = await asyncio.wait_for(self.request_response(client, kwargs), self.settings.model_timeout_seconds)
         if response.usage is None:
             self.fail("usage_unavailable", "Модель не вернула сведения о расходе; продолжение остановлено.")
         self.input_tokens += response.usage.input_tokens
@@ -543,8 +573,16 @@ async def run_agent(documents: list[Document], evidence: list[Evidence], setting
         raise
     except (TimeoutError, APITimeoutError):
         run.fail("model_timeout", "Время анализа истекло. Извлечённый текст сохранён; повторный анализ требует загрузить файлы заново.", True)
-    except APIConnectionError:
-        run.fail("model_unavailable", "Не удалось связаться с сервисом модели.", True)
+    except APIConnectionError as exc:
+        kind = connection_kind(exc)
+        logger.warning("Model transport failure: kind=%s cause=%s calls=%s", kind,
+                       type(exc.__cause__).__name__, run.calls)
+        message = {
+            "connect": "Не удалось установить соединение с API модели после повторной попытки подключения.",
+            "response_interrupted": "Соединение с API модели оборвалось при получении ответа. Запрос мог быть обработан, но готовый ответ не получен.",
+            "connection_unknown": "Не удалось связаться с API модели; техническая причина записана в журнал сервера.",
+        }[kind]
+        run.fail("model_unavailable", message + " Документы прочитаны, отчёт не сформирован. Можно повторить анализ.", True)
     except APIStatusError as exc:
         run.fail("model_unavailable", "Сервис модели отклонил запрос. Проверьте конфигурацию или повторите позже.", exc.status_code == 429 or exc.status_code >= 500)
     except (ValidationError, ValueError, TypeError):

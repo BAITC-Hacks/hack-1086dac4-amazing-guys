@@ -251,3 +251,34 @@ def test_invalid_report_gets_one_bounded_repair(monkeypatch, data, repaired):
         assert error.value.code == "invalid_model_output"
         assert error.value.usage.calls == 3
     assert api.parse.call_count == 2
+
+
+def test_comparison_inherits_only_explicit_function_sources(data):
+    docs, sources, payload = data
+    payload.function_matches[0].evidence_ids = ["e1"]
+    assert agent.assemble_linked_citations(payload) == ["m1"]
+    assert payload.function_matches[0].evidence_ids == ["e1", "e2"]
+    agent.validate_payload(payload, docs, sources, {"d2"})
+    payload.function_matches[0].evidence_ids = ["outside"]
+    agent.assemble_linked_citations(payload)
+    with pytest.raises(agent.AgentFailure, match="неизвестный источник"):
+        agent.validate_payload(payload, docs, sources, {"d2"})
+    payload.function_matches[0].evidence_ids = ["e1", "e1"]
+    agent.assemble_linked_citations(payload)
+    with pytest.raises(agent.AgentFailure, match="уникальные"):
+        agent.validate_payload(payload, docs, sources, {"d2"})
+
+
+def test_unit_citation_rejects_adjacent_wrong_department(data):
+    docs, sources, payload = data
+    sources.append(sources[0].model_copy(update={"evidence_id": "e3", "quote": "Другой отдел хранит архив."}))
+    payload.unit_changes[0].evidence_ids = ["e3", "e2"]
+    with pytest.raises(agent.AgentFailure, match="u1: before Отдел А") as error:
+        agent.validate_payload(payload, docs, sources, {"d2"})
+    assert "e1" in error.value.message
+
+
+def test_unit_guard_does_not_pretend_to_resolve_inflected_names(data):
+    docs, sources, payload = data
+    payload.unit_changes[0].before_unit_ids = ["Отдела А"]
+    agent.validate_payload(payload, docs, sources, {"d2"})

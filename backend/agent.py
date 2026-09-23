@@ -78,6 +78,9 @@ evidence_ids бери только из ПЕРВОГО столбца sources, �
 формулировки права доказанной потерей обязанности. При нехватке основания используй
 unresolved/insufficient_evidence. Не выдумывай изменения подразделений из двух названий:
 нужно основание в тексте или явная оговорка неопределённости.
+Для unit_changes цитируй абзацы, явно называющие соответствующие подразделения
+каждой версии (например перечень структуры), плюс источники описываемого изменения.
+Нельзя ссылаться на соседний абзац с обязанностью другого подразделения.
 """
 
 # Standard per-million token rates agreed for this implementation; no silent fallback.
@@ -86,6 +89,34 @@ PRICES = {"gpt-6-luna": (0.1, 0.5), "gpt-6-sol": (2.0, 10.0)}
 
 def _json(value):
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def assemble_linked_citations(payload: ReportPayload) -> list[str]:
+    """Carry source provenance through explicit links; never infer a new source.
+
+    Keep every model citation (including invalid ones for rejection). Only append
+    citations already attached to explicitly linked functions/findings. This does
+    not establish that the comparison or conclusion is semantically correct.
+    """
+    functions = {f.id: f for f in payload.functions}
+    changed = []
+    for row in [*payload.function_matches, *payload.findings]:
+        inherited = [source for fid in row.before_function_ids + row.after_function_ids
+                     if fid in functions for source in functions[fid].evidence_ids]
+        combined = list(dict.fromkeys([*row.evidence_ids, *inherited]))
+        # Do not hide duplicate model citations from the validator.
+        if len(set(row.evidence_ids)) == len(row.evidence_ids) and combined != row.evidence_ids:
+            row.evidence_ids = combined
+            changed.append(row.id)
+    findings = {f.id: f for f in payload.findings}
+    for index, rec in enumerate(payload.conclusion.recommendations):
+        inherited = [source for fid in rec.finding_ids if fid in findings
+                     for source in findings[fid].evidence_ids]
+        combined = list(dict.fromkeys([*rec.evidence_ids, *inherited]))
+        if len(set(rec.evidence_ids)) == len(rec.evidence_ids) and combined != rec.evidence_ids:
+            rec.evidence_ids = combined
+            changed.append(f"recommendation:{index + 1}")
+    return changed
 
 
 def validate_payload(payload: ReportPayload, documents: list[Document], evidence: list[Evidence],
@@ -125,6 +156,20 @@ def validate_payload(payload: ReportPayload, documents: list[Document], evidence
             require(len(set(units)) == len(units) and all(u.strip() for u in units), "некорректное подразделение")
             if units:
                 require(any(sources[i].version == version for i in change.evidence_ids), "нет источника версии подразделения")
+    # A narrow lexical guard, not a semantic verifier: when the exact unit name
+    # exists in this version, its organizational row must cite a naming fragment.
+    normalize = lambda text: " ".join(text.casefold().split())
+    named_sources = [(source, normalize(source.quote)) for source in evidence]
+    missing_units = []
+    for change in payload.unit_changes:
+        for version, units in [("before", change.before_unit_ids), ("after", change.after_unit_ids)]:
+            for unit in units:
+                name = normalize(unit)
+                candidates = [s.evidence_id for s, quote in named_sources
+                              if s.version == version and name in quote]
+                if candidates and not set(candidates).intersection(change.evidence_ids):
+                    missing_units.append(f"{change.id}: {version} {unit}; источники с названием: {', '.join(candidates[:4])}")
+    require(not missing_units, "подразделения не названы в цитируемых фрагментах: " + "; ".join(missing_units))
     covered = set()
     for match in payload.function_matches:
         refs(match.before_function_ids, "before")
@@ -301,6 +346,9 @@ class _Run:
             payload = response.output_parsed
             if not isinstance(payload, ReportPayload):
                 self.fail("invalid_model_output", "Модель не вернула полный структурированный отчёт.")
+            inherited = assemble_linked_citations(payload)
+            if inherited:
+                self.activity.append(Activity(operation="assemble_linked_citations", status="completed", referenced_ids=inherited))
             try:
                 validate_payload(payload, self.documents, self.evidence, self.searched_after)
             except AgentFailure as first_error:
@@ -316,6 +364,9 @@ class _Run:
                 payload = response.output_parsed
                 if not isinstance(payload, ReportPayload):
                     self.fail("invalid_model_output", "Исправленный отчёт не прошёл проверку формата.")
+                inherited = assemble_linked_citations(payload)
+                if inherited:
+                    self.activity.append(Activity(operation="assemble_linked_citations", status="completed", referenced_ids=inherited))
                 validate_payload(payload, self.documents, self.evidence, self.searched_after)
             self.activity.append(Activity(operation="validate_references", status="completed_structural_only", referenced_ids=[]))
             return AgentResult(payload=payload, activity=self.activity, usage=self.usage())

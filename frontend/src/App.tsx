@@ -15,7 +15,6 @@ import {
   FileSearch,
   FileText,
   Files,
-  FlaskConical,
   GitCompareArrows,
   Layers3,
   LayoutDashboard,
@@ -27,11 +26,10 @@ import {
   Plus,
   Search,
   ShieldCheck,
-  Sparkles,
   UploadCloud,
   X,
 } from "lucide-react";
-import { ACCEPT, API_BASE, ApiError, api, delay, validateFiles } from "./api";
+import { ACCEPT, ApiError, api, delay, validateFiles } from "./api";
 import type {
   AnalysisStatus,
   Evidence,
@@ -40,8 +38,6 @@ import type {
   Version,
 } from "./contracts";
 import { labels, locationLabel, tone } from "./contracts";
-import { demoEvidence, demoReport } from "./demo";
-import type { DemoScenario } from "./demo";
 import ChangeComparison from "./ChangeComparison";
 import { HumanReview, HumanReviewSummaryView } from "./HumanReview";
 import "./comparison-integration.css";
@@ -290,13 +286,11 @@ function UploadBox({
 function Inspector({
   selection,
   report,
-  isDemo,
   onClose,
   returnFocusTo,
 }: {
   selection: Selection;
   report: Report;
-  isDemo: boolean;
   onClose: () => void;
   returnFocusTo: RefObject<HTMLElement | null>;
 }) {
@@ -308,13 +302,16 @@ function Inspector({
   const [loadedKey, setLoadedKey] = useState("");
   const [closing, setClosing] = useState(false);
   const [compareQuotes, setCompareQuotes] = useState(false);
-  const selectedMatch = report.function_matches.find((item) => item.id === selection.id);
-  const selectedFinding = report.findings.find((item) => item.id === selection.id);
+  const selectedMatch = report.function_matches.find(
+    (item) => item.id === selection.id,
+  );
+  const selectedFinding = report.findings.find(
+    (item) => item.id === selection.id,
+  );
   const ref = useRef<HTMLElement>(null);
   const exitAnimation = useRef<Animation | null>(null);
   const sourceKey = JSON.stringify([
     report.analysis_id,
-    isDemo,
     selection.id,
     selection.evidence_ids,
     retry,
@@ -405,13 +402,9 @@ function Inspector({
       try {
         const values = await Promise.all(
           unique(selection.evidence_ids).map((id) =>
-            isDemo
-              ? Promise.resolve(demoEvidence[id])
-              : api.evidence(report.analysis_id, id, controller.signal),
+            api.evidence(report.analysis_id, id, controller.signal),
           ),
         );
-        if (values.some((x) => !x))
-          throw new Error("Источник не найден в демонстрационном комплекте.");
         if (!controller.signal.aborted) setEvidences(values);
       } catch (e) {
         if (!controller.signal.aborted)
@@ -430,7 +423,6 @@ function Inspector({
     selection.id,
     selection.evidence_ids,
     report.analysis_id,
-    isDemo,
     retry,
     sourceKey,
   ]);
@@ -483,19 +475,15 @@ function Inspector({
               onClick={() => setCompareQuotes((value) => !value)}
             >
               <GitCompareArrows size={16} />
-              {compareQuotes ? "Вернуться к источникам" : "Сравнить цитаты рядом"}
+              {compareQuotes
+                ? "Вернуться к источникам"
+                : "Сравнить цитаты рядом"}
             </button>
           )}
           {selection.human_review && (
             <div className="review-label">
               <Clock3 size={14} />
               Исходная оценка ИИ: не проверено сотрудником
-            </div>
-          )}
-          {isDemo && (
-            <div className="source-demo">
-              <FlaskConical size={14} />
-              Цитаты авторского примера. Не результат AI.
             </div>
           )}
           {waiting && (
@@ -599,16 +587,6 @@ function Inspector({
                           "Дополнительный контекст не предоставлен."}
                       </p>
                     </details>
-                    {isDemo && (
-                      <a
-                        className="source-link"
-                        href={`/demo/${e.version}.pdf`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Открыть исходный PDF <ArrowUpRight size={14} />
-                      </a>
-                    )}
                   </article>
                 ))}
               </div>
@@ -652,11 +630,9 @@ function Inspector({
 }
 
 export default function App() {
-  const [mode, setMode] = useState<"demo" | "api">("demo");
   const [view, setView] = useState<View>("new");
   const [tab, setTab] = useState<Tab>("functions");
   const [report, setReport] = useState<Report | null>(null);
-  const [reportMode, setReportMode] = useState<"demo" | "api">("demo");
   const [files, setFiles] = useState<Record<Version, File[]>>({
     before: [],
     after: [],
@@ -681,7 +657,6 @@ export default function App() {
   const [stage, setStage] = useState<keyof typeof stageNames>("extracting");
   const [progress, setProgress] = useState<AnalysisStatus | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
-  const [scenario, setScenario] = useState<DemoScenario>("complete");
   const [mobileMenu, setMobileMenu] = useState(false);
   const [toast, setToast] = useState("");
   const controller = useRef<AbortController | null>(null);
@@ -709,18 +684,8 @@ export default function App() {
     setMobileMenu(false);
   }
   function openSection(next: Exclude<View, "new">) {
-    if (!report && mode === "demo") {
-      setReport(demoReport("complete"));
-      setReportMode("demo");
-    }
     setError(null);
     navigate(next);
-  }
-  function showDemoInSection() {
-    setMode("demo");
-    setReport(demoReport("complete"));
-    setReportMode("demo");
-    setError(null);
   }
   async function changeFiles(v: Version, values: File[], prepare = false) {
     filePreparation.current[v]?.abort();
@@ -743,64 +708,15 @@ export default function App() {
       }
     }
   }
-  function changeMode(next: "demo" | "api") {
-    if (busy) return;
-    setMode(next);
-    setError(null);
-    requestKey.current = null;
-    analysisId.current = null;
-    navigate("new");
-  }
   function cancel() {
     controller.current?.abort();
     busyRef.current = false;
     setBusy(false);
     setToast(
-      mode === "api"
-        ? phase === "result"
-          ? "Открытие результата остановлено. Повтор откроет готовый отчёт."
-          : "Ожидание остановлено. Сервер может продолжать обработку; повтор продолжит ожидание."
-        : "Демонстрация остановлена.",
+      phase === "result"
+        ? "Открытие результата остановлено. Повтор откроет готовый отчёт."
+        : "Ожидание остановлено. Сервер может продолжать обработку; повтор продолжит ожидание.",
     );
-  }
-  async function runDemo() {
-    setMode("demo");
-    if (busyRef.current) return;
-    busyRef.current = true;
-    const ac = new AbortController();
-    controller.current = ac;
-    setBusy(true);
-    setPhase("analyzing");
-    setError(null);
-    setProgress(null);
-    setSelection(null);
-    try {
-      for (const current of stages) {
-        setStage(current);
-        await delay(480, ac.signal);
-      }
-      if (scenario === "failed")
-        throw new ApiError(
-          "Демонстрация сбоя: сервис анализа недоступен. Реальные файлы не отправлялись.",
-          true,
-        );
-      const next = demoReport(scenario);
-      setReport(next);
-      setReportMode("demo");
-      navigate("overview");
-    } catch (e) {
-      if (!ac.signal.aborted)
-        setError(
-          e instanceof ApiError
-            ? e
-            : new ApiError("Не удалось открыть демонстрацию."),
-        );
-    } finally {
-      if (controller.current === ac) {
-        setBusy(false);
-        busyRef.current = false;
-      }
-    }
   }
   async function runApi() {
     if (busyRef.current || preparingFiles.before || preparingFiles.after)
@@ -857,7 +773,6 @@ export default function App() {
             const next = await api.report(analysisId.current, ac.signal);
             await delay(400, ac.signal);
             setReport(next);
-            setReportMode("api");
             navigate("overview");
             return;
           } catch (e) {
@@ -906,13 +821,10 @@ export default function App() {
     try {
       await delay(350, ac.signal);
       download(
-        `${reportMode === "demo" ? "DEMO-" : ""}org-review-${report.analysis_id}.json`,
+        `org-review-${report.analysis_id}.json`,
         JSON.stringify(
           {
-            provenance:
-              reportMode === "demo"
-                ? "Авторская демонстрация. Не результат AI."
-                : "Ответ backend. Требует проверки сотрудником.",
+            provenance: "Ответ backend. Требует проверки сотрудником.",
             ...report,
           },
           null,
@@ -932,7 +844,6 @@ export default function App() {
       if (exportController.current === ac) exportController.current = null;
     }
   }
-  const isDemo = reportMode === "demo";
   const search = (value: unknown) =>
     JSON.stringify(value)
       .toLocaleLowerCase("ru")
@@ -978,7 +889,7 @@ export default function App() {
     ) || [];
   const isResult = report && view !== "new";
   const visibleStages = stages.filter(
-    (s) => mode === "demo" || s !== "matching" || stage === "matching",
+    (s) => s !== "matching" || stage === "matching",
   );
   const activeStage =
     phase === "uploading" ||
@@ -1050,33 +961,6 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="mode-box">
-            <span>
-              <span className={`live-dot ${mode}`} />
-              {mode === "demo" ? "Демонстрационный режим" : "Режим сервера"}
-            </span>
-            <p>
-              {mode === "demo"
-                ? "Исследуйте интерфейс на открытом авторском примере."
-                : "Файлы отправляются на настроенный backend."}
-            </p>
-            <div className="mode-switch" aria-label="Режим работы">
-              <button
-                disabled={busy}
-                className={mode === "demo" ? "selected" : ""}
-                onClick={() => changeMode("demo")}
-              >
-                Демо
-              </button>
-              <button
-                disabled={busy}
-                className={mode === "api" ? "selected" : ""}
-                onClick={() => changeMode("api")}
-              >
-                Сервер
-              </button>
-            </div>
-          </div>
           <div className="sidebar-footer">
             <ShieldCheck size={16} />
             <span>Каждый вывод — с источником</span>
@@ -1115,7 +999,7 @@ export default function App() {
                 <div>
                   <div className="eyebrow">Работа со своими документами</div>
                   <h1>{viewNames[view]}</h1>
-                  <p>Раздел доступен. Осталось выбрать данные для просмотра.</p>
+                  <p>Загрузите две версии документов и запустите сравнение.</p>
                 </div>
               </div>
               <div className="panel no-report-panel">
@@ -1139,14 +1023,6 @@ export default function App() {
                     <UploadCloud size={18} />
                     Загрузить документы
                   </button>
-                  <button className="secondary" onClick={showDemoInSection}>
-                    <FlaskConical size={18} />
-                    Посмотреть демопример
-                  </button>
-                </div>
-                <div className="source-demo">
-                  Демопример работает без сервера. Для анализа своих файлов
-                  нужен запущенный backend.
                 </div>
               </div>
             </section>
@@ -1197,9 +1073,7 @@ export default function App() {
                   <div className="upload-footer">
                     <p>
                       <ShieldCheck size={17} />
-                      {mode === "demo"
-                        ? "Файлы остаются в браузере. Демо их не анализирует."
-                        : "Файлы отправятся на ваш сервер для анализа."}
+                      Документы отправятся на анализ после нажатия кнопки.
                     </p>
                     <button
                       className="primary"
@@ -1207,7 +1081,6 @@ export default function App() {
                         busy ||
                         preparingFiles.before ||
                         preparingFiles.after ||
-                        mode === "demo" ||
                         !files.before.length ||
                         !files.after.length
                       }
@@ -1223,76 +1096,11 @@ export default function App() {
                         : "Сравнить документы"}
                     </button>
                   </div>
-                  {mode === "demo" ? (
-                    <p className="upload-hint">
-                      Для своих документов переключитесь в режим «Сервер». Пока
-                      можно открыть готовый пример справа.
-                    </p>
-                  ) : (
-                    <p className="upload-hint">
-                      Адрес подключения: <code>{API_BASE}</code>. Ключ модели
-                      хранится только на сервере.
-                    </p>
-                  )}
-                </div>
-                <aside className="demo-card">
-                  <span className="demo-icon">
-                    <Sparkles size={23} />
-                  </span>
-                  <span className="mini-label">Попробуйте без загрузки</span>
-                  <h2>
-                    От документов
-                    <br />к ясной картине
-                  </h2>
-                  <p>
-                    Вымышленная компания «Контур»: переименование отдела,
-                    передача функций и три замечания для проверки.
+                  <p className="upload-hint">
+                    Сначала добавьте обе версии. Результат появится после
+                    обработки документов.
                   </p>
-                  <div className="demo-visual" aria-hidden="true">
-                    <div>
-                      <FileText size={20} />
-                      <span>До</span>
-                      <i />
-                    </div>
-                    <span className="connector">
-                      <ArrowRight size={20} />
-                    </span>
-                    <div>
-                      <FileCheck2 size={20} />
-                      <span>После</span>
-                      <i />
-                    </div>
-                  </div>
-                  <button
-                    className="demo-button"
-                    disabled={busy}
-                    onClick={runDemo}
-                  >
-                    Открыть пример <ArrowUpRight size={18} />
-                  </button>
-                  <small>Авторские данные · без вызова AI</small>
-                  <details className="demo-options">
-                    <summary>
-                      Сценарий демонстрации <ChevronDown size={13} />
-                    </summary>
-                    <label htmlFor="scenario">
-                      Проверить состояние интерфейса
-                    </label>
-                    <select
-                      id="scenario"
-                      value={scenario}
-                      disabled={busy}
-                      onChange={(e) =>
-                        setScenario(e.target.value as DemoScenario)
-                      }
-                    >
-                      <option value="complete">Полный пример</option>
-                      <option value="partial">Неполное покрытие</option>
-                      <option value="failed">Ошибка обработки</option>
-                      <option value="empty">Пустой результат</option>
-                    </select>
-                  </details>
-                </aside>
+                </div>
               </div>
               <div className="value-row">
                 <div>
@@ -1322,11 +1130,7 @@ export default function App() {
             <div id="page-content" className="results" key={view}>
               <div className="page-heading">
                 <div>
-                  <div className="eyebrow">
-                    {isDemo
-                      ? "Компания «Контур» · авторский пример"
-                      : "Анализ загруженных документов"}
-                  </div>
+                  <div className="eyebrow">Анализ загруженных документов</div>
                   <h1>
                     {view === "overview"
                       ? "Вся картина изменений"
@@ -1350,18 +1154,12 @@ export default function App() {
                 </div>
                 <ExportButton busy={exporting} onClick={exportReport} />
               </div>
-              <div className="demo-ribbon">
-                <FlaskConical size={16} />
+              <div className="review-notice">
+                <ShieldCheck size={16} />
                 <span>
-                  {isDemo
-                    ? "Демонстрация интерфейса на авторском комплекте. Результат подготовлен заранее, модель не вызывалась."
-                    : "Выводы сервера носят рекомендательный характер и требуют проверки сотрудником."}
+                  Выводы носят рекомендательный характер и требуют проверки
+                  сотрудником.
                 </span>
-                {isDemo && (
-                  <button onClick={newComparison}>
-                    Свой комплект <ArrowRight size={14} />
-                  </button>
-                )}
               </div>
               {report.coverage.status === "partial" && (
                 <Alert>
@@ -1922,19 +1720,6 @@ export default function App() {
                                     {w}
                                   </p>
                                 ))}
-                                {isDemo &&
-                                  ["before", "after"].includes(
-                                    d.document_id,
-                                  ) && (
-                                    <a
-                                      className="source-link"
-                                      href={`/demo/${v}.pdf`}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                    >
-                                      Исходный PDF <ArrowUpRight size={14} />
-                                    </a>
-                                  )}
                               </div>
                             </article>
                           ))}
@@ -1964,11 +1749,7 @@ export default function App() {
                       </span>
                       <span>
                         Аналитическое заключение
-                        <small>
-                          {isDemo
-                            ? "Авторский пример · не результат AI"
-                            : `Анализ ${report.analysis_id}`}
-                        </small>
+                        <small>Анализ {report.analysis_id}</small>
                       </span>
                     </div>
                     <h2>
@@ -2040,11 +1821,7 @@ export default function App() {
                           </p>
                         ))
                       ) : (
-                        <p>
-                          {isDemo
-                            ? "В деморежиме инструменты и модель не вызываются."
-                            : "Сервер не предоставил журнал операций."}
-                        </p>
+                        <p>Сервер не предоставил журнал операций.</p>
                       )}
                     </details>
                   </aside>
@@ -2066,10 +1843,7 @@ export default function App() {
                 <p>{error.message}</p>
                 <div className="error-actions">
                   {error.retryable && (
-                    <button
-                      className="secondary"
-                      onClick={mode === "demo" ? runDemo : runApi}
-                    >
+                    <button className="secondary" onClick={runApi}>
                       Повторить
                     </button>
                   )}
@@ -2089,7 +1863,6 @@ export default function App() {
         <Inspector
           selection={selection}
           report={report}
-          isDemo={isDemo}
           onClose={() => setSelection(null)}
           returnFocusTo={sourceTrigger}
         />
@@ -2112,21 +1885,17 @@ export default function App() {
                 <FileSearch size={35} />
               )}
             </div>
-            <span className="mini-label">
-              {mode === "demo" ? "Демонстрация этапов" : "Обработка документов"}
-            </span>
+            <span className="mini-label">Обработка документов</span>
             <div className="processing-status" role="status" aria-atomic="true">
               <h2 id="processing-title">{processingTitle}</h2>
               <p>
-                {mode === "demo"
-                  ? "Показываем подготовленный пример. AI не вызывается."
-                  : phase === "uploading"
-                    ? "Передаём оба комплекта на сервер. Анализ начнётся после отправки."
-                    : phase === "result"
-                      ? "Получаем готовый отчёт и готовим его к просмотру."
-                      : progress?.status === "queued"
-                        ? "Сервер принял документы. Ожидаем начала анализа."
-                        : "Проверяем статус на сервере. Это может занять несколько минут."}
+                {phase === "uploading"
+                  ? "Передаём оба комплекта на сервер. Анализ начнётся после отправки."
+                  : phase === "result"
+                    ? "Получаем готовый отчёт и готовим его к просмотру."
+                    : progress?.status === "queued"
+                      ? "Сервер принял документы. Ожидаем начала анализа."
+                      : "Проверяем статус на сервере. Это может занять несколько минут."}
               </p>
             </div>
             <ol className="stage-list">
@@ -2163,9 +1932,7 @@ export default function App() {
                 </p>
               ))}
             <button autoFocus className="text-button" onClick={cancel}>
-              {mode === "demo"
-                ? "Остановить демонстрацию"
-                : "Остановить ожидание"}
+              Остановить ожидание
             </button>
           </section>
         </div>

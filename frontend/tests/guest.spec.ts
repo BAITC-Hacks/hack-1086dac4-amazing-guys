@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openAnalysis } from "./helpers/analysis";
 import AxeBuilder from "@axe-core/playwright";
 
 test("guest entry preserves files, makes no API calls and survives reload", async ({
@@ -41,7 +42,9 @@ test("guest entry preserves files, makes no API calls and survives reload", asyn
     .getByRole("navigation", { name: "Основная навигация" })
     .getByRole("button", { name: "Сравнение", exact: true })
     .click();
-  await expect(page.locator("tbody tr")).toHaveCount(7);
+  await expect(
+    page.getByRole("heading", { name: "Отчёт ещё не получен" }),
+  ).toBeVisible();
   await page.reload();
   await expect(
     page.getByRole("button", { name: "Гость", exact: true }),
@@ -70,6 +73,7 @@ test("closing entry cancels loading and Escape does not dismiss underlying sourc
   expect(
     await page.evaluate(() => sessionStorage.getItem("kontur.guest")),
   ).toBeNull();
+  await openAnalysis(page);
   await page
     .getByRole("navigation", { name: "Основная навигация" })
     .getByRole("button", { name: "Сравнение", exact: true })

@@ -1,13 +1,16 @@
-import data from "./demo-data.json";
-import { evidenceSchema, reportSchema } from "./contracts";
-export type DemoScenario = "complete" | "partial" | "failed" | "empty";
-export const demoEvidence = Object.fromEntries(
+import { readFileSync } from "node:fs";
+import { evidenceSchema, reportSchema } from "../../src/contracts";
+const data = JSON.parse(
+  readFileSync(new URL("./report.json", import.meta.url), "utf8"),
+);
+export type ReportScenario = "complete" | "partial" | "failed" | "empty";
+export const fixtureEvidence = Object.fromEntries(
   Object.entries(data.evidence).map(([id, e]) => [id, evidenceSchema.parse(e)]),
 );
-export function demoReport(scenario: DemoScenario) {
+export function fixtureReport(scenario: ReportScenario) {
   const report = reportSchema.parse(structuredClone(data.report));
   if (scenario === "partial") {
-    report.analysis_id = "demo-partial";
+    report.analysis_id = "test-partial";
     report.documents.push({
       document_id: "unread-appendix",
       version: "after",
@@ -34,7 +37,7 @@ export function demoReport(scenario: DemoScenario) {
       "Анализ примера неполон: приложение не прочитано. Замечания предварительные. Уточните данные перед оценкой сохранности функций.";
   }
   if (scenario === "empty") {
-    report.analysis_id = "demo-empty";
+    report.analysis_id = "test-empty";
     report.unit_changes = [];
     report.functions = [];
     report.function_matches = [];

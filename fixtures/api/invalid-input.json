@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "Загрузите непустые комплекты «до» и «после».",
+    "retryable": false
+  }
+}

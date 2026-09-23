@@ -1,0 +1,17 @@
+{
+  "evidence_id": "doc-001:e00001",
+  "document_id": "doc-001",
+  "version": "before",
+  "document_name": "before.txt",
+  "locator": {
+    "kind": "paragraph",
+    "section": null,
+    "paragraph_index": 1,
+    "page": null,
+    "sheet": null,
+    "cell_range": null
+  },
+  "quote": "Отдел А готовит отчёт.",
+  "context": "",
+  "extraction_warning": null
+}

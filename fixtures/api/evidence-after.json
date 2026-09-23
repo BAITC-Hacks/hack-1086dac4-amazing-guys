@@ -1,0 +1,17 @@
+{
+  "evidence_id": "doc-002:e00001",
+  "document_id": "doc-002",
+  "version": "after",
+  "document_name": "after.txt",
+  "locator": {
+    "kind": "paragraph",
+    "section": null,
+    "paragraph_index": 1,
+    "page": null,
+    "sheet": null,
+    "cell_range": null
+  },
+  "quote": "Отдел Б готовит отчёт.",
+  "context": "",
+  "extraction_warning": null
+}

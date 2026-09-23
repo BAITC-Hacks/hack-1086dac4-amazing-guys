@@ -1,0 +1,1116 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Анализ функций до/после",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analyses": {
+      "post": {
+        "summary": "Create Analysis",
+        "operationId": "create_analysis_api_analyses_post",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_analysis_api_analyses_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analyses/{analysis_id}": {
+      "get": {
+        "summary": "Analysis Status",
+        "operationId": "analysis_status_api_analyses__analysis_id__get",
+        "parameters": [
+          {
+            "name": "analysis_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Analysis Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analyses/{analysis_id}/report": {
+      "get": {
+        "summary": "Analysis Report",
+        "operationId": "analysis_report_api_analyses__analysis_id__report_get",
+        "parameters": [
+          {
+            "name": "analysis_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Analysis Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Report"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analyses/{analysis_id}/evidence/{evidence_id}": {
+      "get": {
+        "summary": "Get Evidence",
+        "operationId": "get_evidence_api_analyses__analysis_id__evidence__evidence_id__get",
+        "parameters": [
+          {
+            "name": "analysis_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Analysis Id"
+            }
+          },
+          {
+            "name": "evidence_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Evidence Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Evidence"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Activity": {
+        "properties": {
+          "operation": {
+            "type": "string",
+            "title": "Operation"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "referenced_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Referenced Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "operation",
+          "status",
+          "referenced_ids"
+        ],
+        "title": "Activity"
+      },
+      "AnalysisAccepted": {
+        "properties": {
+          "analysis_id": {
+            "type": "string",
+            "title": "Analysis Id"
+          },
+          "contract_version": {
+            "type": "string",
+            "const": "r1",
+            "title": "Contract Version"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "analysis_id",
+          "contract_version",
+          "status"
+        ],
+        "title": "AnalysisAccepted"
+      },
+      "AnalysisStatus": {
+        "properties": {
+          "analysis_id": {
+            "type": "string",
+            "title": "Analysis Id"
+          },
+          "contract_version": {
+            "type": "string",
+            "const": "r1",
+            "title": "Contract Version"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "extracting",
+              "matching",
+              "verifying",
+              "reporting"
+            ],
+            "title": "Stage"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/Document"
+            },
+            "type": "array",
+            "title": "Documents"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Usage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "analysis_id",
+          "contract_version",
+          "status",
+          "stage",
+          "documents",
+          "warnings",
+          "error",
+          "usage"
+        ],
+        "title": "AnalysisStatus"
+      },
+      "ApiError": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "retryable": {
+            "type": "boolean",
+            "title": "Retryable"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "retryable"
+        ],
+        "title": "ApiError"
+      },
+      "Body_create_analysis_api_analyses_post": {
+        "properties": {
+          "before_files": {
+            "items": {
+              "type": "string",
+              "contentMediaType": "application/octet-stream"
+            },
+            "type": "array",
+            "title": "Before Files"
+          },
+          "after_files": {
+            "items": {
+              "type": "string",
+              "contentMediaType": "application/octet-stream"
+            },
+            "type": "array",
+            "title": "After Files"
+          }
+        },
+        "type": "object",
+        "required": [
+          "before_files",
+          "after_files"
+        ],
+        "title": "Body_create_analysis_api_analyses_post"
+      },
+      "Conclusion": {
+        "properties": {
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Limitations"
+          },
+          "recommendations": {
+            "items": {
+              "$ref": "#/components/schemas/Recommendation"
+            },
+            "type": "array",
+            "title": "Recommendations"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "summary",
+          "limitations",
+          "recommendations"
+        ],
+        "title": "Conclusion"
+      },
+      "Coverage": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "partial"
+            ],
+            "title": "Status"
+          },
+          "document_ids_checked": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Document Ids Checked"
+          },
+          "unread_document_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unread Document Ids"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Limitations"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "document_ids_checked",
+          "unread_document_ids",
+          "limitations"
+        ],
+        "title": "Coverage"
+      },
+      "Document": {
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "title": "Document Id"
+          },
+          "version": {
+            "type": "string",
+            "enum": [
+              "before",
+              "after"
+            ],
+            "title": "Version"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "extraction_status": {
+            "type": "string",
+            "enum": [
+              "read",
+              "partial",
+              "failed"
+            ],
+            "title": "Extraction Status"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "document_id",
+          "version",
+          "name",
+          "extraction_status",
+          "warnings"
+        ],
+        "title": "Document"
+      },
+      "Evidence": {
+        "properties": {
+          "evidence_id": {
+            "type": "string",
+            "title": "Evidence Id"
+          },
+          "document_id": {
+            "type": "string",
+            "title": "Document Id"
+          },
+          "version": {
+            "type": "string",
+            "enum": [
+              "before",
+              "after"
+            ],
+            "title": "Version"
+          },
+          "document_name": {
+            "type": "string",
+            "title": "Document Name"
+          },
+          "locator": {
+            "$ref": "#/components/schemas/Locator"
+          },
+          "quote": {
+            "type": "string",
+            "title": "Quote"
+          },
+          "context": {
+            "type": "string",
+            "title": "Context"
+          },
+          "extraction_warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extraction Warning"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "evidence_id",
+          "document_id",
+          "version",
+          "document_name",
+          "locator",
+          "quote",
+          "context"
+        ],
+        "title": "Evidence"
+      },
+      "Finding": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "possible_loss",
+              "possible_duplication",
+              "potential_conflict",
+              "insufficient_evidence"
+            ],
+            "title": "Type"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "explanation": {
+            "type": "string",
+            "title": "Explanation"
+          },
+          "before_function_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Before Function Ids"
+          },
+          "after_function_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "After Function Ids"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Evidence Ids"
+          },
+          "checked_after_document_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Checked After Document Ids"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Limitations"
+          },
+          "human_review": {
+            "type": "string",
+            "const": "unreviewed",
+            "title": "Human Review"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "title",
+          "explanation",
+          "before_function_ids",
+          "after_function_ids",
+          "evidence_ids",
+          "checked_after_document_ids",
+          "limitations",
+          "human_review"
+        ],
+        "title": "Finding"
+      },
+      "Function": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "version": {
+            "type": "string",
+            "enum": [
+              "before",
+              "after"
+            ],
+            "title": "Version"
+          },
+          "unit_id": {
+            "type": "string",
+            "title": "Unit Id"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "object": {
+            "type": "string",
+            "title": "Object"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Evidence Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "unit_id",
+          "action",
+          "object",
+          "scope",
+          "role",
+          "evidence_ids"
+        ],
+        "title": "Function"
+      },
+      "FunctionMatch": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "before_function_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Before Function Ids"
+          },
+          "after_function_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "After Function Ids"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "preserved",
+              "transferred",
+              "changed",
+              "unresolved"
+            ],
+            "title": "Status"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Evidence Ids"
+          },
+          "explanation": {
+            "type": "string",
+            "title": "Explanation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "before_function_ids",
+          "after_function_ids",
+          "status",
+          "evidence_ids",
+          "explanation"
+        ],
+        "title": "FunctionMatch"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "Locator": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "paragraph",
+              "table_cell",
+              "pdf_page",
+              "sheet_range"
+            ],
+            "title": "Kind"
+          },
+          "section": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section"
+          },
+          "paragraph_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paragraph Index"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page"
+          },
+          "sheet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sheet"
+          },
+          "cell_range": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cell Range"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "Locator"
+      },
+      "Recommendation": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "finding_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Finding Ids"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Evidence Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text",
+          "finding_ids",
+          "evidence_ids"
+        ],
+        "title": "Recommendation"
+      },
+      "Report": {
+        "properties": {
+          "unit_changes": {
+            "items": {
+              "$ref": "#/components/schemas/UnitChange"
+            },
+            "type": "array",
+            "title": "Unit Changes"
+          },
+          "functions": {
+            "items": {
+              "$ref": "#/components/schemas/Function"
+            },
+            "type": "array",
+            "title": "Functions"
+          },
+          "function_matches": {
+            "items": {
+              "$ref": "#/components/schemas/FunctionMatch"
+            },
+            "type": "array",
+            "title": "Function Matches"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            },
+            "type": "array",
+            "title": "Findings"
+          },
+          "conclusion": {
+            "$ref": "#/components/schemas/Conclusion"
+          },
+          "contract_version": {
+            "type": "string",
+            "const": "r1",
+            "title": "Contract Version"
+          },
+          "analysis_id": {
+            "type": "string",
+            "title": "Analysis Id"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/Coverage"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/Document"
+            },
+            "type": "array",
+            "title": "Documents"
+          },
+          "activity": {
+            "items": {
+              "$ref": "#/components/schemas/Activity"
+            },
+            "type": "array",
+            "title": "Activity"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/Usage"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "unit_changes",
+          "functions",
+          "function_matches",
+          "findings",
+          "conclusion",
+          "contract_version",
+          "analysis_id",
+          "coverage",
+          "documents",
+          "activity",
+          "usage"
+        ],
+        "title": "Report"
+      },
+      "UnitChange": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "before_unit_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Before Unit Ids"
+          },
+          "after_unit_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "After Unit Ids"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "preserved",
+              "renamed",
+              "merged",
+              "split",
+              "created",
+              "removed",
+              "unresolved"
+            ],
+            "title": "Kind"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Evidence Ids"
+          },
+          "explanation": {
+            "type": "string",
+            "title": "Explanation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "before_unit_ids",
+          "after_unit_ids",
+          "kind",
+          "evidence_ids",
+          "explanation"
+        ],
+        "title": "UnitChange"
+      },
+      "Usage": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "calls": {
+            "type": "integer",
+            "title": "Calls"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens"
+          },
+          "estimated_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Cost Usd"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "model",
+          "calls",
+          "input_tokens",
+          "output_tokens",
+          "estimated_cost_usd"
+        ],
+        "title": "Usage"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

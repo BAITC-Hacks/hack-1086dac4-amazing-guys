@@ -1,0 +1,31 @@
+{
+  "analysis_id": "00000000000000000000000000000000",
+  "contract_version": "r1",
+  "status": "completed",
+  "stage": "reporting",
+  "documents": [
+    {
+      "document_id": "doc-001",
+      "version": "before",
+      "name": "before.txt",
+      "extraction_status": "read",
+      "warnings": []
+    },
+    {
+      "document_id": "doc-002",
+      "version": "after",
+      "name": "after.txt",
+      "extraction_status": "read",
+      "warnings": []
+    }
+  ],
+  "warnings": [],
+  "error": null,
+  "usage": {
+    "model": "fixture-not-ai",
+    "calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "estimated_cost_usd": 0.0
+  }
+}

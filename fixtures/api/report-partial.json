@@ -1,0 +1,142 @@
+{
+  "unit_changes": [
+    {
+      "id": "u1",
+      "before_unit_ids": [
+        "Отдел А"
+      ],
+      "after_unit_ids": [
+        "Отдел Б"
+      ],
+      "kind": "unresolved",
+      "evidence_ids": [
+        "doc-001:e00001",
+        "doc-002:e00001"
+      ],
+      "explanation": "Демонстрационный пример: связь подразделений не подтверждена."
+    }
+  ],
+  "functions": [
+    {
+      "id": "f1",
+      "version": "before",
+      "unit_id": "Отдел А",
+      "action": "готовит",
+      "object": "отчёт",
+      "scope": null,
+      "role": null,
+      "evidence_ids": [
+        "doc-001:e00001"
+      ]
+    },
+    {
+      "id": "f2",
+      "version": "after",
+      "unit_id": "Отдел Б",
+      "action": "готовит",
+      "object": "отчёт",
+      "scope": null,
+      "role": null,
+      "evidence_ids": [
+        "doc-002:e00001"
+      ]
+    }
+  ],
+  "function_matches": [
+    {
+      "id": "m1",
+      "before_function_ids": [
+        "f1"
+      ],
+      "after_function_ids": [
+        "f2"
+      ],
+      "status": "unresolved",
+      "evidence_ids": [
+        "doc-001:e00001",
+        "doc-002:e00001"
+      ],
+      "explanation": "Нужно уточнить назначение отчёта."
+    }
+  ],
+  "findings": [
+    {
+      "id": "n1",
+      "type": "insufficient_evidence",
+      "title": "Уточнить назначение отчёта",
+      "explanation": "В примере не указано, относятся ли обязанности к одному отчёту.",
+      "before_function_ids": [
+        "f1"
+      ],
+      "after_function_ids": [
+        "f2"
+      ],
+      "evidence_ids": [
+        "doc-001:e00001",
+        "doc-002:e00001"
+      ],
+      "checked_after_document_ids": [],
+      "limitations": [
+        "Авторский HTTP-пример, не результат AI."
+      ],
+      "human_review": "unreviewed"
+    }
+  ],
+  "conclusion": {
+    "summary": "Авторский HTTP-пример для интерфейса. Модель не вызывалась.",
+    "limitations": [
+      "Смысл требует проверки сотрудником."
+    ],
+    "recommendations": [
+      {
+        "text": "Уточнить вид отчёта.",
+        "finding_ids": [
+          "n1"
+        ],
+        "evidence_ids": [
+          "doc-001:e00001",
+          "doc-002:e00001"
+        ]
+      }
+    ]
+  },
+  "contract_version": "r1",
+  "analysis_id": "00000000000000000000000000000000",
+  "coverage": {
+    "status": "partial",
+    "document_ids_checked": [
+      "doc-001",
+      "doc-002"
+    ],
+    "unread_document_ids": [],
+    "limitations": [
+      "Пример частичного чтения: изображение не распознано."
+    ]
+  },
+  "documents": [
+    {
+      "document_id": "doc-001",
+      "version": "before",
+      "name": "before.txt",
+      "extraction_status": "partial",
+      "warnings": [
+        "Изображение не распознано."
+      ]
+    },
+    {
+      "document_id": "doc-002",
+      "version": "after",
+      "name": "after.txt",
+      "extraction_status": "read",
+      "warnings": []
+    }
+  ],
+  "activity": [],
+  "usage": {
+    "model": "fixture-not-ai",
+    "calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "estimated_cost_usd": 0.0
+  }
+}

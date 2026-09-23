@@ -1,0 +1,431 @@
+import { test, expect } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
+import { readFileSync } from "node:fs";
+const fixture = JSON.parse(
+  readFileSync(new URL("../src/demo-data.json", import.meta.url), "utf8"),
+);
+const report = JSON.parse(
+  readFileSync(
+    new URL("../../fixtures/api/report.json", import.meta.url),
+    "utf8",
+  ),
+);
+const accepted = JSON.parse(
+  readFileSync(
+    new URL("../../fixtures/api/accepted.json", import.meta.url),
+    "utf8",
+  ),
+);
+const completed = JSON.parse(
+  readFileSync(
+    new URL("../../fixtures/api/completed.json", import.meta.url),
+    "utf8",
+  ),
+);
+const failed = JSON.parse(
+  readFileSync(
+    new URL("../../fixtures/api/failed.json", import.meta.url),
+    "utf8",
+  ),
+);
+const evidenceBefore = JSON.parse(
+  readFileSync(
+    new URL("../../fixtures/api/evidence-before.json", import.meta.url),
+    "utf8",
+  ),
+);
+const evidenceAfter = JSON.parse(
+  readFileSync(
+    new URL("../../fixtures/api/evidence-after.json", import.meta.url),
+    "utf8",
+  ),
+);
+
+const nav = (page: Page, name: string) =>
+  page
+    .getByRole("navigation", { name: "Основная навигация" })
+    .getByRole("button", { name, exact: true });
+async function demo(page: Page, scenario = "complete") {
+  await page.goto("/");
+  if (scenario !== "complete") {
+    await page.getByText("Сценарий демонстрации", { exact: true }).click();
+    await page
+      .getByLabel("Проверить состояние интерфейса")
+      .selectOption(scenario);
+  }
+  await page
+    .getByRole("button", { name: "Открыть пример", exact: true })
+    .click();
+  if (scenario !== "failed")
+    await expect(
+      page.getByRole("heading", { name: "Вся картина изменений" }),
+    ).toBeVisible();
+}
+async function upload(page: Page) {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Сервер", exact: true }).click();
+  await page.getByLabel("Файлы до изменений", { exact: true }).setInputFiles({
+    name: "before.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Отдел А готовит отчёт."),
+  });
+  await page
+    .getByLabel("Файлы после изменений", { exact: true })
+    .setInputFiles({
+      name: "after.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("Отдел Б готовит отчёт."),
+    });
+}
+
+test("demo journey, exact evidence, search, registry, units and JSON download", async ({
+  page,
+}) => {
+  const apiCalls: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes("/api/")) apiCalls.push(r.url());
+  });
+  await demo(page);
+  await nav(page, "Сравнение").click();
+  await expect(page.locator("tbody tr")).toHaveCount(7);
+  await page.getByLabel("Фильтр сравнения").selectOption("preserved");
+  await expect(page.locator("tbody tr")).toHaveCount(4);
+  await page.getByLabel("Фильтр сравнения").selectOption("all");
+  await page.getByLabel("Поиск в сравнении").fill("Архивный");
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await page.getByRole("button", { name: "Источники m2", exact: true }).click();
+  await expect(page.locator(".inspector blockquote").first()).toHaveText(
+    fixture.evidence["B-FUN-02"].quote,
+  );
+  await page.locator(".inspector summary").first().click();
+  await expect(page.locator(".inspector .context").first()).toContainText(
+    "[B-FUN-02]",
+  );
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".inspector")).toHaveCount(0);
+  await page.getByRole("tab", { name: /Подразделения/ }).click();
+  await expect(page.locator("tbody tr")).toHaveCount(6);
+  await page.getByRole("tab", { name: /Реестр функций/ }).click();
+  await expect(page.locator("tbody tr")).toHaveCount(15);
+  await page.getByLabel("Фильтр сравнения").selectOption("after");
+  await expect(page.locator("tbody tr")).toHaveCount(8);
+  await nav(page, "Замечания 3").click();
+  await page.getByLabel("Тип замечания").selectOption("possible_duplication");
+  await expect(page.locator(".finding-card")).toHaveCount(1);
+  await nav(page, "Заключение").click();
+  const downloaded = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Скачать JSON" }).first().click();
+  const file = await downloaded;
+  expect(file.suggestedFilename()).toContain("DEMO");
+  const json = JSON.parse(readFileSync((await file.path())!, "utf8"));
+  expect(json.provenance).toContain("Не результат AI");
+  expect(json.findings).toHaveLength(3);
+  expect(apiCalls).toEqual([]);
+});
+
+test("uploads validate type, empty file, size and count; demo never analyzes user files", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const before = page.getByLabel("Файлы до изменений", { exact: true });
+  await before.setInputFiles({
+    name: "bad.exe",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from("bad"),
+  });
+  await expect(page.getByRole("alert")).toContainText("используйте PDF");
+  await before.setInputFiles({
+    name: "empty.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.alloc(0),
+  });
+  await expect(page.getByRole("alert")).toContainText("файл пуст");
+  await before.setInputFiles({
+    name: "large.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.alloc(5 * 1024 * 1024 + 1),
+  });
+  await expect(page.getByRole("alert")).toContainText("превышает");
+  await before.setInputFiles(
+    Array.from({ length: 6 }, (_, i) => ({
+      name: `${i}.txt`,
+      mimeType: "text/plain",
+      buffer: Buffer.from("test"),
+    })),
+  );
+  await expect(page.getByRole("alert")).toContainText("не более 5");
+  await before.setInputFiles({
+    name: "valid.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("test"),
+  });
+  await page
+    .getByLabel("Файлы после изменений", { exact: true })
+    .setInputFiles({
+      name: "after.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("test"),
+    });
+  await expect(
+    page.getByRole("button", { name: "Сравнить документы", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Удалить valid.txt" }).click();
+  await expect(page.getByText("valid.txt", { exact: true })).toHaveCount(0);
+});
+
+test("partial coverage is visible and downgrades loss to insufficient evidence", async ({
+  page,
+}) => {
+  await demo(page, "partial");
+  await expect(
+    page.getByText("Анализ неполный", { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".focus-row")).toContainText([
+    "Недостаточно данных",
+    "Возможный дубль",
+    "Потенциальный конфликт",
+  ]);
+  await nav(page, "Документы").click();
+  await expect(
+    page.getByRole("heading", { name: "Приложение_скан.pdf" }),
+  ).toBeVisible();
+  await expect(page.getByText("Не прочитан", { exact: true })).toBeVisible();
+});
+
+test("demo failure can recover without showing a fabricated successful report", async ({
+  page,
+}) => {
+  await demo(page, "failed");
+  await expect(page.getByRole("alert")).toContainText("Демонстрация сбоя");
+  await expect(
+    page.getByRole("heading", { name: "Вся картина изменений" }),
+  ).toHaveCount(0);
+  await page
+    .getByLabel("Проверить состояние интерфейса")
+    .selectOption("complete");
+  await page.getByRole("button", { name: "Повторить", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Вся картина изменений" }),
+  ).toBeVisible();
+});
+
+test("empty result and unmatched search have actionable states", async ({
+  page,
+}) => {
+  await demo(page, "empty");
+  await nav(page, "Сравнение").click();
+  await expect(
+    page.getByRole("heading", { name: "Совпадений нет" }),
+  ).toBeVisible();
+  await nav(page, "Заключение").click();
+  await expect(page.getByText("Рекомендации не сформированы.")).toBeVisible();
+});
+
+test("HTTP r1 adapter: multipart, polling, report, encoded evidence and safe text", async ({
+  page,
+}) => {
+  let posts = 0;
+  const keys: string[] = [];
+  let polls = 0;
+  const sources: string[] = [];
+  await page.route("http://127.0.0.1:8000/**", async (route) => {
+    const req = route.request(),
+      path = new URL(req.url()).pathname;
+    if (req.method() === "POST") {
+      posts++;
+      keys.push(req.headers()["idempotency-key"]);
+      expect(req.postDataBuffer()?.toString()).toContain('name="before_files"');
+      expect(req.postDataBuffer()?.toString()).toContain('name="after_files"');
+      return route.fulfill({ status: 202, json: accepted });
+    }
+    if (path.endsWith("/report")) return route.fulfill({ json: report });
+    if (path.includes("/evidence/")) {
+      sources.push(path);
+      return route.fulfill({
+        json: path.includes("doc-001")
+          ? { ...evidenceBefore, quote: '<script>alert("unsafe")</script>' }
+          : evidenceAfter,
+      });
+    }
+    polls++;
+    return route.fulfill({
+      json: {
+        ...completed,
+        status: polls > 1 ? "completed" : "running",
+        stage: polls > 1 ? "reporting" : "extracting",
+      },
+    });
+  });
+  await upload(page);
+  await page
+    .getByRole("button", { name: "Сравнить документы", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Вся картина изменений" }),
+  ).toBeVisible();
+  expect(posts).toBe(1);
+  expect(keys[0]).toMatch(/^[\da-f-]{36}$/);
+  await page
+    .getByRole("button", { name: /Уточнить назначение отчёта/ })
+    .click();
+  await expect(page.locator(".inspector blockquote").first()).toHaveText(
+    '<script>alert("unsafe")</script>',
+  );
+  expect(sources.every((s) => s.includes("%3A"))).toBeTruthy();
+  await expect(page.locator(".inspector script")).toHaveCount(0);
+});
+
+test("network retry reuses key and preserves selected files", async ({
+  page,
+}) => {
+  const keys: string[] = [];
+  await page.route("http://127.0.0.1:8000/**", async (route) => {
+    if (route.request().method() === "POST") {
+      keys.push(route.request().headers()["idempotency-key"]);
+      return route.abort("failed");
+    }
+    return route.abort();
+  });
+  await upload(page);
+  await page
+    .getByRole("button", { name: "Сравнить документы", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText("Сервер не ответил");
+  await page.getByRole("button", { name: "Повторить", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("Сервер не ответил");
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+  await expect(
+    page.getByRole("button", { name: "Удалить before.txt" }),
+  ).toBeVisible();
+});
+
+test("background failure is shown and a deliberate rerun creates a new key", async ({
+  page,
+}) => {
+  const keys: string[] = [];
+  await page.route("http://127.0.0.1:8000/**", async (route) => {
+    if (route.request().method() === "POST") {
+      keys.push(route.request().headers()["idempotency-key"]);
+      return route.fulfill({ status: 202, json: accepted });
+    }
+    return route.fulfill({ json: failed });
+  });
+  await upload(page);
+  await page
+    .getByRole("button", { name: "Сравнить документы", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText("Время анализа истекло");
+  await page.getByRole("button", { name: "Повторить", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("Время анализа истекло");
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).not.toBe(keys[1]);
+});
+
+test("malformed server response never renders as success", async ({ page }) => {
+  await page.route("http://127.0.0.1:8000/**", (r) =>
+    r.fulfill({ json: { invalid: true } }),
+  );
+  await upload(page);
+  await page
+    .getByRole("button", { name: "Сравнить документы", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText("контракту r1");
+  await expect(
+    page.getByRole("heading", { name: "Вся картина изменений" }),
+  ).toHaveCount(0);
+});
+
+test("mobile layout, menu and source drawer", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await demo(page);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBeTruthy();
+  await page.getByRole("button", { name: "Открыть меню" }).click();
+  await nav(page, "Сравнение").click();
+  await page.getByRole("button", { name: "Источники m1", exact: true }).click();
+  await expect(
+    page.getByRole("complementary", { name: "Проверка по источнику" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBeTruthy();
+  await page
+    .getByRole("button", { name: "Закрыть источники", exact: true })
+    .click();
+  await expect(page.locator(".inspector")).toHaveCount(0);
+});
+
+test("all demo quotes match source files exactly", async () => {
+  for (const e of Object.values(fixture.evidence) as Array<{
+    version: string;
+    evidence_id: string;
+    quote: string;
+  }>) {
+    const original = readFileSync(`public/demo/${e.version}.md`, "utf8");
+    expect(original).toContain(`[${e.evidence_id}] ${e.quote}`);
+  }
+  for (const finding of fixture.report.findings)
+    for (const id of finding.evidence_ids)
+      expect(fixture.evidence).toHaveProperty(id);
+});
+
+test("accessibility: start and comparison with inspector", async ({ page }) => {
+  await page.goto("/");
+  const start = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+    .analyze();
+  expect(
+    start.violations.map((v) => ({
+      id: v.id,
+      nodes: v.nodes.map((n) => ({
+        target: n.target,
+        summary: n.failureSummary,
+      })),
+    })),
+  ).toEqual([]);
+  await page
+    .getByRole("button", { name: "Открыть пример", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Вся картина изменений" }),
+  ).toBeVisible();
+  for (const screen of ["Обзор", "Документы", "Замечания 3", "Заключение"]) {
+    await nav(page, screen).click();
+    const audit = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+      .analyze();
+    expect
+      .soft(
+        audit.violations.map((v) => ({
+          screen,
+          id: v.id,
+          nodes: v.nodes.map((n) => ({
+            target: n.target,
+            summary: n.failureSummary,
+          })),
+        })),
+      )
+      .toEqual([]);
+  }
+  await nav(page, "Сравнение").click();
+  await page.getByRole("button", { name: "Источники m1", exact: true }).click();
+  const result = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+    .analyze();
+  expect(
+    result.violations.map((v) => ({
+      id: v.id,
+      nodes: v.nodes.map((n) => ({
+        target: n.target,
+        summary: n.failureSummary,
+      })),
+    })),
+  ).toEqual([]);
+});

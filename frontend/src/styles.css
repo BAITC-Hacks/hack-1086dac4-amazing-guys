@@ -2848,3 +2848,32 @@ td,
 .recommendation p {
   color: #506987;
 }
+
+.no-report-panel {
+  padding: 35px;
+  max-width: 780px;
+}
+.no-report-panel h2 {
+  font-size: 24px;
+  font-weight: 500;
+  margin-bottom: 15px;
+}
+.no-report-panel > p {
+  color: #506987;
+  font-size: 14px;
+  max-width: 65ch;
+}
+.section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 25px 0 20px;
+}
+@media (max-width: 440px) {
+  .no-report-panel {
+    padding: 23px;
+  }
+  .section-actions {
+    flex-direction: column;
+  }
+}

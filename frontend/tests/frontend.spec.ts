@@ -429,3 +429,79 @@ test("accessibility: start and comparison with inspector", async ({ page }) => {
     })),
   ).toEqual([]);
 });
+
+for (const [section, heading] of [
+  ["Обзор", "Вся картина изменений"],
+  ["Документы", "Основание вашего анализа"],
+  ["Сравнение", "От функции к ответственности"],
+  ["Замечания", "Что требует внимания"],
+  ["Заключение", "Аналитическое заключение"],
+]) {
+  test(`first visit: ${section} opens directly without starting analysis`, async ({
+    page,
+  }) => {
+    const apiCalls: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/api/")) apiCalls.push(r.url());
+    });
+    await page.goto("/");
+    await expect(nav(page, section)).toBeEnabled();
+    await nav(page, section).click();
+    await expect(
+      page.getByRole("heading", { name: heading, level: 1 }),
+    ).toBeVisible();
+    await expect(page.locator(".demo-ribbon")).toContainText(
+      "Результат подготовлен заранее",
+    );
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(apiCalls).toEqual([]);
+  });
+}
+
+test("server navigation shows a useful empty state and switches to demo only explicitly", async ({
+  page,
+}) => {
+  const apiCalls: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes("/api/")) apiCalls.push(r.url());
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Сервер", exact: true }).click();
+  for (const section of [
+    "Обзор",
+    "Документы",
+    "Сравнение",
+    "Замечания",
+    "Заключение",
+  ]) {
+    await nav(page, section).click();
+    await expect(
+      page.getByRole("heading", { name: "Отчёт ещё не получен" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Загрузить документы", exact: true }),
+    ).toBeVisible();
+    await expect(page.locator(".demo-ribbon")).toHaveCount(0);
+  }
+  await page
+    .getByRole("button", { name: "Загрузить документы", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Создайте новое сравнение" }),
+  ).toBeVisible();
+  await nav(page, "Сравнение").click();
+  await page
+    .getByRole("button", { name: "Посмотреть демопример", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", {
+      name: "От функции к ответственности",
+      level: 1,
+    }),
+  ).toBeVisible();
+  await expect(page.locator("tbody tr")).toHaveCount(7);
+  await expect(page.locator(".demo-ribbon")).toContainText(
+    "модель не вызывалась",
+  );
+  expect(apiCalls).toEqual([]);
+});

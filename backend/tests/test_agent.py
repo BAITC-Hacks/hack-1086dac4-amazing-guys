@@ -419,3 +419,16 @@ def test_excerpt_repair_keeps_the_report_instead_of_regenerating_it(monkeypatch,
     patch_input = json.loads(api.parse.call_args.kwargs["input"][0]["content"])
     assert list(patch_input) == ["f1"]
     assert patch_input["f1"]["sources"][0]["quote"] == sources[0].quote
+
+
+def test_unit_names_get_exact_same_version_anchors_without_removing_other_citations(data):
+    docs, sources, payload = data
+    sources.append(sources[0].model_copy(update={"evidence_id": "role-before", "quote": "Руководитель ОА готовит отчёт."}))
+    payload.unit_changes[0].evidence_ids = ["role-before", "e2"]
+    assert agent.attach_unit_name_sources(payload, sources) == ["u1"]
+    assert payload.unit_changes[0].evidence_ids == ["role-before", "e2", "e1"]
+    agent.validate_payload(payload, docs, sources, {"d2"})
+    payload.unit_changes[0].evidence_ids.append("unknown")
+    agent.attach_unit_name_sources(payload, sources)
+    with pytest.raises(agent.AgentFailure, match="неизвестный источник"):
+        agent.validate_payload(payload, docs, sources, {"d2"})

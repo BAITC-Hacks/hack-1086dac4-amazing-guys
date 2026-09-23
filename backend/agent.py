@@ -131,6 +131,29 @@ def assemble_linked_citations(payload: ReportPayload) -> list[str]:
     return changed
 
 
+def attach_unit_name_sources(payload: ReportPayload, evidence: list[Evidence]) -> list[str]:
+    """Add exact name anchors; never remove model citations or infer succession.
+
+    Role/function paragraphs often use only a unit abbreviation. Keep those
+    citations and supplement the organizational row with its verbatim name from
+    the same version, using precisely the lexical rule enforced below.
+    """
+    normalize = lambda text: " ".join(text.casefold().split())
+    sources = [(e, normalize(e.quote)) for e in evidence]
+    changed = []
+    for row in payload.unit_changes:
+        for version, units in (("before", row.before_unit_ids), ("after", row.after_unit_ids)):
+            for unit in units:
+                if not unit.strip():
+                    continue
+                candidates = [e.evidence_id for e, quote in sources
+                              if e.version == version and normalize(unit) in quote]
+                if candidates and not set(candidates).intersection(row.evidence_ids):
+                    row.evidence_ids.append(candidates[0])
+                    changed.append(row.id)
+    return list(dict.fromkeys(changed))
+
+
 def validate_payload(payload: ReportPayload, documents: list[Document], evidence: list[Evidence],
                      searched_after: set[str], source_excerpts: dict | None = None) -> None:
     """Structural provenance only; do not describe this as checking semantic truth."""
@@ -444,6 +467,9 @@ class _Run:
                 batch_history = history + [{"role": "user", "content": "Заверши структурированный отчёт в области текущего прохода. Не утверждай поиски, которых не было. Если оснований не хватает, укажи insufficient_evidence/unresolved."}]
                 response = await self.request(client, batch_history, final=True)
                 payload = response.output_parsed
+                anchors = attach_unit_name_sources(payload, self.evidence)
+                if anchors:
+                    self.activity.append(Activity(operation="attach_unit_name_sources", status="completed", referenced_ids=anchors))
                 inherited = assemble_linked_citations(payload)
                 if inherited:
                     self.activity.append(Activity(operation="assemble_linked_citations", status="completed", referenced_ids=inherited))
@@ -460,6 +486,9 @@ class _Run:
                         "validation_error": first_error.message, "rejected_report": payload.model_dump()})})
                     response = await self.request(client, batch_history, final=True)
                     payload = response.output_parsed
+                    anchors = attach_unit_name_sources(payload, self.evidence)
+                    if anchors:
+                        self.activity.append(Activity(operation="attach_unit_name_sources", status="completed", referenced_ids=anchors))
                     inherited = assemble_linked_citations(payload)
                     if inherited:
                         self.activity.append(Activity(operation="assemble_linked_citations", status="completed", referenced_ids=inherited))

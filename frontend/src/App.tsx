@@ -42,6 +42,9 @@ import type {
 import { labels, locationLabel, tone } from "./contracts";
 import { demoEvidence, demoReport } from "./demo";
 import type { DemoScenario } from "./demo";
+import ChangeComparison from "./ChangeComparison";
+import { HumanReview, HumanReviewSummaryView } from "./HumanReview";
+import "./comparison-integration.css";
 
 type View =
   "new" | "overview" | "documents" | "comparison" | "findings" | "conclusion";
@@ -262,6 +265,9 @@ function Inspector({
   const [copied, setCopied] = useState("");
   const [loadedKey, setLoadedKey] = useState("");
   const [closing, setClosing] = useState(false);
+  const [compareQuotes, setCompareQuotes] = useState(false);
+  const selectedMatch = report.function_matches.find((item) => item.id === selection.id);
+  const selectedFinding = report.findings.find((item) => item.id === selection.id);
   const ref = useRef<HTMLElement>(null);
   const exitAnimation = useRef<Animation | null>(null);
   const sourceKey = JSON.stringify([
@@ -303,6 +309,7 @@ function Inspector({
     exitAnimation.current?.cancel();
     exitAnimation.current = null;
     setClosing(false);
+    setCompareQuotes(false);
     ref.current?.focus();
     ref.current?.querySelector(".inspector-body")?.scrollTo(0, 0);
   }, [selection]);
@@ -407,7 +414,7 @@ function Inspector({
         ref={ref}
         id="source-inspector"
         tabIndex={-1}
-        className="inspector"
+        className={`inspector${compareQuotes ? " inspector-comparison" : ""}`}
         aria-label="Проверка по источнику"
       >
         <div className="inspector-top">
@@ -426,10 +433,21 @@ function Inspector({
           <Badge status={selection.status} />
           <h2>{selection.title}</h2>
           <p className="explanation">{selection.explanation}</p>
+          {selectedMatch && (
+            <button
+              type="button"
+              className="secondary comparison-toggle"
+              aria-pressed={compareQuotes}
+              onClick={() => setCompareQuotes((value) => !value)}
+            >
+              <GitCompareArrows size={16} />
+              {compareQuotes ? "Вернуться к источникам" : "Сравнить цитаты рядом"}
+            </button>
+          )}
           {selection.human_review && (
             <div className="review-label">
               <Clock3 size={14} />
-              Не проверено сотрудником
+              Исходная оценка ИИ: не проверено сотрудником
             </div>
           )}
           {isDemo && (
@@ -492,7 +510,10 @@ function Inspector({
                 text="Для этого вывода сервер не предоставил ссылки. Требуется уточнение."
               />
             )}
-            {!waiting && (
+            {!waiting && !error && compareQuotes && selectedMatch && (
+              <ChangeComparison evidences={evidences} match={selectedMatch} />
+            )}
+            {!waiting && !compareQuotes && (
               <div className="source-quotes" key={sourceKey}>
                 {evidences.map((e) => (
                   <article
@@ -569,6 +590,14 @@ function Inspector({
               {s}
             </p>
           ))}
+          {selectedFinding && (
+            <HumanReview
+              key={`${report.analysis_id}:${selectedFinding.id}`}
+              analysisId={report.analysis_id}
+              findingId={selectedFinding.id}
+              findingTitle="Решение по замечанию"
+            />
+          )}
         </div>
         <div className="inspector-foot">
           <ShieldCheck size={15} />
@@ -1198,11 +1227,11 @@ export default function App() {
                 </div>
                 <button
                   className="secondary export-button"
-                  aria-label="Скачать отчёт PDF"
+                  aria-label="Скачать отчёт JSON"
                   onClick={exportReport}
                 >
                   <ArrowDownToLine size={17} />
-                  <span>Скачать отчёт PDF</span>
+                  <span>Скачать отчёт JSON</span>
                 </button>
               </div>
               <div className="demo-ribbon">
@@ -1700,6 +1729,10 @@ export default function App() {
                       </select>
                     </label>
                   </div>
+                  <HumanReviewSummaryView
+                    analysisId={report.analysis_id}
+                    findingIds={report.findings.map((finding) => finding.id)}
+                  />
                   <div className="findings-list">
                     {findings.map((f) => (
                       <article
@@ -1710,7 +1743,7 @@ export default function App() {
                           <Badge status={f.type} />
                           <span>
                             <Clock3 size={13} />
-                            Не проверено сотрудником
+                            Оценка ИИ · требует проверки
                           </span>
                         </div>
                         <h2>{f.title}</h2>
@@ -1879,7 +1912,7 @@ export default function App() {
                     <p>{report.findings.length} замечания для проверки</p>
                     <button className="secondary" onClick={exportReport}>
                       <ArrowDownToLine size={16} />
-                      Скачать отчёт PDF
+                      Скачать отчёт JSON
                     </button>
                     <details className="activity">
                       <summary>

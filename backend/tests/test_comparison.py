@@ -1,8 +1,26 @@
 import pytest
+import json
 
 from backend.comparison import (ComparisonReview, comparison_blocks,
                                 validate_review, missing_review_sources, review_schema, parse_review)
 from backend.models import Evidence, Locator
+
+
+def test_scoped_synthesis_keeps_sources_and_tool_checks_without_other_batch_notes():
+    from backend.comparison import scoped_review_history
+    sources = {"role": "user", "content": json.dumps({"sources": [{"quote": "Complete source"}]})}
+    notes = {"role": "user", "content": json.dumps({"review_instructions": "Verify",
+        "comparison_review": {"blocks": [{"block_id": "one", "observations": ["A"]},
+                                           {"block_id": "two", "observations": ["B"]}]}})}
+    tool = {"type": "function_call_output", "call_id": "call", "output": "Real search results"}
+    history = [sources, notes, tool]
+    first = scoped_review_history(history, ["one"])
+    second = scoped_review_history(history, ["two"])
+    assert first[0] == sources and first[2] == tool
+    assert json.loads(first[1]["content"])["comparison_review"]["blocks"] == [{"block_id": "one", "observations": ["A"]}]
+    assert json.loads(second[1]["content"])["comparison_review"]["blocks"] == [{"block_id": "two", "observations": ["B"]}]
+    assert len(json.loads(history[1]["content"])["comparison_review"]["blocks"]) == 2
+    assert scoped_review_history(history, None) == history
 
 
 def source(id, version, quote, doc=None):

@@ -1,0 +1,88 @@
+.change-comparison {
+  color: #1c2d46;
+  background: #fff;
+  border: 1px solid #e5eaf1;
+  border-radius: 14px;
+  box-shadow: 0 5px 24px #253d6510;
+  padding: 22px;
+}
+.change-comparison-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+.change-comparison-kicker {
+  color: #3067eb;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  margin: 0 0 4px;
+  text-transform: uppercase;
+}
+.change-comparison h2,
+.change-comparison h3 { letter-spacing: -.025em; margin: 0; }
+.change-comparison h2 { font-size: 20px; }
+.change-comparison h3 { align-items: center; display: flex; font-size: 15px; gap: 8px; margin-bottom: 12px; }
+.change-comparison h3 span {
+  align-items: center;
+  background: #edf2fa;
+  border-radius: 999px;
+  color: #60718b;
+  display: inline-flex;
+  font-size: 11px;
+  height: 21px;
+  justify-content: center;
+  min-width: 21px;
+  padding: 0 6px;
+}
+.change-comparison-status { border-radius: 999px; font-size: 12px; padding: 5px 9px; }
+.status-preserved { background: #e4f4eb; color: #197448; }
+.status-changed, .status-transferred { background: #fff1d9; color: #875d00; }
+.status-unresolved { background: #fce4e4; color: #a42a2a; }
+.change-comparison-explanation { color: #52657f; line-height: 1.6; margin: 14px 0 18px; }
+.change-comparison-note { background: #f5f7fb; border-left: 3px solid #9aaac0; color: #60718b; font-size: 12px; line-height: 1.5; margin: 12px 0 16px; padding: 8px 10px; }
+.change-comparison-columns { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.change-comparison-column { min-width: 0; }
+.change-comparison-before { border-right: 1px solid #e5eaf1; padding-right: 14px; }
+.change-comparison-after { padding-left: 0; }
+.change-comparison-evidence-list { display: grid; gap: 10px; }
+.change-comparison-evidence { background: #f8fafc; border: 1px solid #e5eaf1; border-radius: 10px; padding: 12px; }
+.change-comparison-evidence header { display: flex; flex-wrap: wrap; gap: 5px 10px; justify-content: space-between; margin-bottom: 9px; }
+.change-comparison-source { color: #304b70; font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.change-comparison-locator { color: #76849a; font-size: 11px; }
+.change-comparison blockquote {
+  background: #fff;
+  border-left: 3px solid #bbcadf;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.change-comparison-before blockquote { border-left-color: #d59696; }
+.change-comparison-after blockquote { border-left-color: #6eb99b; }
+.change-diff-removed { background: #ffdede; border-radius: 2px; color: #852e2e; text-decoration: line-through; text-decoration-thickness: 1px; }
+.change-diff-added { background: #d9f4e5; border-radius: 2px; color: #176b43; }
+.change-comparison-context { margin-top: 9px; }
+.change-comparison-context summary { color: #526b8d; cursor: pointer; font-size: 12px; }
+.change-comparison-context p { color: #60718b; font-size: 12px; line-height: 1.55; margin: 8px 0 0; white-space: pre-wrap; }
+.change-comparison-context-button,
+.change-comparison-error button { color: #3067eb; font-size: 12px; margin-top: 9px; padding: 0; text-decoration: underline; }
+.change-comparison-empty,
+.change-comparison-state { color: #76849a; font-size: 13px; line-height: 1.5; margin: 0; padding: 16px 4px; }
+.change-comparison-error { background: #fff3f3; border: 1px solid #f0caca; border-radius: 9px; color: #8f3030; font-size: 13px; padding: 12px; }
+.change-comparison-error p { margin: 0; }
+@media (max-width: 700px) {
+  .change-comparison { padding: 16px; }
+  .change-comparison-columns { grid-template-columns: 1fr; }
+  .change-comparison-before { border-bottom: 1px solid #e5eaf1; border-right: 0; padding: 0 0 14px; }
+  .change-comparison-after { padding: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .change-comparison *, .change-comparison *::before, .change-comparison *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
+}

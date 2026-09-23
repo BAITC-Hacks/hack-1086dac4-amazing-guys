@@ -1,0 +1,5 @@
+.comparison-toggle { margin-top: 16px; }
+.app.has-inspector .inspector.inspector-comparison { width: min(880px, 100vw); }
+.inspector-comparison .change-comparison { margin-top: 20px; padding: 16px; box-shadow: none; }
+.inspector-comparison .change-comparison h2 { font-size: 18px; }
+.inspector-comparison .change-comparison blockquote { font-family: inherit; font-size: 13px; }

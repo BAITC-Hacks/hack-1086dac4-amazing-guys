@@ -1,5 +1,6 @@
 """Deterministic attention guide, never a semantic verdict or a gold answer."""
 from difflib import SequenceMatcher
+import json
 from typing import Literal
 
 from .models import Evidence, StrictModel, ReportPayload
@@ -18,6 +19,32 @@ class BlockReview(StrictModel):
 
 class ComparisonReview(StrictModel):
     blocks: list[BlockReview]
+
+
+def scoped_review_history(history: list[dict], scope: list[str] | None) -> list[dict]:
+    """Limit synthesis hypotheses without removing full sources or tool checks.
+
+    Each pass keeps its own notes; otherwise both passes tend to repeat the same
+    salient risk while dropping quieter changes. Never mutate shared history.
+    """
+    if not scope:
+        return list(history)
+    scoped = []
+    for message in history:
+        content = message.get("content")
+        if message.get("role") == "user" and isinstance(content, str):
+            try:
+                value = json.loads(content)
+            except (ValueError, TypeError):
+                value = None
+            if isinstance(value, dict) and "comparison_review" in value:
+                value["comparison_review"]["blocks"] = [
+                    block for block in value["comparison_review"]["blocks"]
+                    if block["block_id"] in scope
+                ]
+                message = {**message, "content": json.dumps(value, ensure_ascii=False)}
+        scoped.append(message)
+    return scoped
 
 
 def review_schema(blocks: list[dict], evidence: list[Evidence]) -> dict:

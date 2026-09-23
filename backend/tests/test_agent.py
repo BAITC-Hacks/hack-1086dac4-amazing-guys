@@ -346,3 +346,44 @@ def test_reasoning_context_is_replayed_with_tool_result(monkeypatch, data):
     history = api.parse.call_args.kwargs["input"]
     assert any(item.get("encrypted_content") == "test-ciphertext" for item in history)
     assert any(item.get("type") == "function_call_output" for item in history)
+
+
+@pytest.mark.parametrize("omit_block", [False, True])
+def test_long_revision_review_is_accounted_and_missing_block_stops(monkeypatch, data, omit_block):
+    docs, sources, payload = data
+    # Identical surrounding paragraphs must not hide the changed role at the end.
+    padding = [sources[v].model_copy(update={"evidence_id": f"padding-{v}-{i}", "quote": f"Общее положение {i}"})
+               for v in range(2) for i in range(50)]
+    sources = padding + sources
+    review = response()
+    review.output_text = json.dumps({"blocks": {} if omit_block else {"change-001": [{"kind": "changed",
+        "explanation": "Обязанность передана другому отделу", "evidence_ids": ["e1", "e2"]}]}})
+    api = install(monkeypatch, [response(call=tool())], payload)
+    api.parse.side_effect = [review, response(payload=payload)]
+    config = Settings(api_key="mock-only-key", max_model_calls=4)
+    if omit_block:
+        with pytest.raises(agent.AgentFailure) as error:
+            asyncio.run(agent.run_agent(docs, sources, config))
+        assert error.value.code == "invalid_model_output"
+        assert error.value.usage.calls == 1
+        assert error.value.usage.estimated_cost_usd > 0
+        api.create.assert_not_called()
+    else:
+        result = asyncio.run(agent.run_agent(docs, sources, config))
+        assert result.usage.calls == 3
+        assert result.activity[0].operation == "review_comparison_blocks"
+        assert result.activity[0].referenced_ids == ["change-001"]
+        prompt = api.parse.call_args.kwargs["input"]
+        assert any("comparison_review" in item.get("content", "") for item in prompt)
+        assert api.parse.call_args_list[0].kwargs["text"]["format"]["name"] == "ComparisonReview"
+
+
+def test_merge_preserves_link_integrity_without_changing_unit_names(data):
+    from backend.comparison import merge_reports
+    docs, sources, payload = data
+    merged = merge_reports([payload, payload.model_copy(deep=True)])
+    assert [f.id for f in merged.functions] == ["p1-f1", "p1-f2", "p2-f1", "p2-f2"]
+    assert merged.function_matches[1].before_function_ids == ["p2-f1"]
+    assert merged.unit_changes[0].before_unit_ids == ["Отдел А"]
+    assert payload.functions[0].id == "f1"
+    agent.validate_payload(merged, docs, sources, {"d2"})

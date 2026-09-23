@@ -9,6 +9,8 @@ from pydantic import Field, ValidationError
 
 from .config import Settings
 from .context import pack_sources, source_characters
+from .comparison import (REVIEW_INSTRUCTIONS, comparison_blocks, review_schema,
+                         parse_review, validate_review, missing_review_sources, review_batches, merge_reports)
 from .models import Activity, AgentResult, Document, Evidence, ReportPayload, StrictModel, Usage
 from .report_format import report_schema
 
@@ -89,6 +91,8 @@ unresolved/insufficient_evidence. Не выдумывай изменения п�
 Для каждой функции source_excerpt — дословный фрагмент (12–160 символов) её действия
 из quote одного из evidence_ids этой функции. Он проверяется буквальным сравнением.
 Не цитируй заголовок вместо действия и не вычисляй ID по порядковому номеру абзаца.
+source_excerpt копируй из исходной quote с исходными падежами и грамматической формой,
+а не из своего пересказа action/object. Перефразированный инфинитив не является цитатой.
 """
 
 # Standard per-million token rates agreed for this implementation; no silent fallback.
@@ -238,6 +242,9 @@ class _Run:
         self.known_cost = 0.0
         self.rates = PRICES.get(settings.model)
         self.report_schema = report_schema(evidence)
+        self.review = None
+        self.report_scope = None
+        self.repair_used = False
 
     def usage(self):
         cost = None if not self.rates or self.unaccounted_call else self.known_cost
@@ -282,15 +289,21 @@ class _Run:
         self.activity.append(Activity(operation=name, status="completed", referenced_ids=referenced))
         return result
 
-    async def request(self, client, history, final=False):
+    async def request(self, client, history, final=False, review=False):
         if self.calls >= self.settings.max_model_calls:
             self.fail("model_call_limit", "Достигнут лимит запросов к модели.")
         # UTF-8 bytes overestimate ordinary text tokenization. Include schema and
         # protocol headroom; this is a conservative local estimate, not billing.
-        body = _json(history) + INSTRUCTIONS + _json(TOOLS) + _json(self.report_schema)
+        instructions = REVIEW_INSTRUCTIONS if review else INSTRUCTIONS
+        if final and self.report_scope:
+            instructions += "\nВ ЭТОМ проходе составляй отчёт только по блокам " + ", ".join(self.report_scope) + ". Обработай КАЖДУЮ смысловую заметку этих блоков, включая сохранённые, а не только риски. Остальные блоки обрабатываются отдельным проходом. Полный текст дан для проверки контекста и переносов. Не заменяй конкретные изменения общими целями документа; отдельное изменение области или добавленное действие должно попасть в функцию и матрицу с объяснением."
+        schema = review_schema(review, self.evidence) if review else self.report_schema
+        body = _json(history) + instructions + _json(TOOLS) + _json(schema)
         input_bound = len(body.encode("utf-8")) + 8192
         tool_output_limit = 2048 if self.settings.reasoning_effort == "none" else 8192
         output_limit = self.settings.max_output_tokens if final else min(tool_output_limit, self.settings.max_output_tokens)
+        if review:
+            output_limit = min(16384, self.settings.max_output_tokens)
         if input_bound + output_limit > 1_000_000:
             self.fail("context_limit", "Комплект превышает допустимый объём запроса модели.")
         long_context = input_bound > 272_000
@@ -301,12 +314,12 @@ class _Run:
         self.reserved_cost = reserved
         self.calls += 1
         self.unaccounted_call = True
-        kwargs = dict(model=self.settings.model, instructions=INSTRUCTIONS, input=history,
+        kwargs = dict(model=self.settings.model, instructions=instructions, input=history,
                       store=False, reasoning={"effort": self.settings.reasoning_effort}, max_output_tokens=output_limit)
-        if final:
+        if final or review:
             response = await asyncio.wait_for(client.responses.create(**kwargs, text={"format": {
-                "type": "json_schema", "name": "ReportPayload", "strict": True,
-                "schema": self.report_schema,
+                "type": "json_schema", "name": "ComparisonReview" if review else "ReportPayload", "strict": True,
+                "schema": schema,
             }}), self.settings.model_timeout_seconds)
         else:
             response = await asyncio.wait_for(client.responses.create(**kwargs, tools=TOOLS,
@@ -324,7 +337,12 @@ class _Run:
             self.fail("cost_limit", "Достигнут оценочный бюджет анализа.")
         if response.status != "completed":
             self.fail("incomplete_model_output", "Модель не завершила ответ; неполный отчёт не опубликован.")
-        if final:
+        if review:
+            try:
+                response.comparison_review = parse_review(response.output_text)
+            except (ValidationError, ValueError, KeyError, AttributeError, TypeError):
+                self.fail("invalid_model_output", "Обзор различий не прошёл проверку формата.")
+        elif final:
             # Account for the completed HTTP response BEFORE parsing its text.
             # SDK parse() can raise before returning usage on an invalid output.
             try:
@@ -366,10 +384,30 @@ class _Run:
         history = [{"role": "user", "content": _json(pack_sources(self.documents, self.evidence))}]
         async with AsyncOpenAI(api_key=self.settings.api_key, base_url="https://api.openai.com/v1",
                                timeout=self.settings.model_timeout_seconds, max_retries=0) as client:
-            # Reserve one final report and, when possible, one bounded correction.
+            # Long one-document revisions need an explicit pass across textual
+            # differences. Small packages retain the simpler existing workflow.
+            blocks = comparison_blocks(self.evidence) if len(self.evidence) >= 100 else []
+            if blocks:
+                if self.settings.max_model_calls < 4:
+                    self.fail("invalid_configuration", "Для обзора длинных редакций нужны минимум четыре запроса модели.")
+                review_history = [{"role": "user", "content": _json({
+                    **pack_sources(self.documents, self.evidence), "comparison_blocks": blocks})}]
+                response = await self.request(client, review_history, review=blocks)
+                self.review = response.comparison_review
+                try:
+                    validate_review(self.review, blocks, self.evidence)
+                except ValueError as exc:
+                    self.fail("invalid_model_output", "Обзор различий не прошёл проверку: " + str(exc))
+                self.activity.append(Activity(operation="review_comparison_blocks", status="completed",
+                                              referenced_ids=[b["block_id"] for b in blocks]))
+                history.append({"role": "user", "content": _json({
+                    "review_instructions": "Ниже промежуточные гипотезы, НЕ доказанные выводы. Проверь их по исходным цитатам. Приоритет итогового отчёта — все changed/preserved/uncertain заметки из каждого блока, включая поздние разделы. Создай функции и соответствия с источниками для каждой самостоятельной заметки. Editorial не требует функции. Не заменяй обзор большим списком общих целей из начала документа. Смысловые изменения обязанностей опиши в function_matches, даже если они не являются рисками. Не требуй доказательства юридического правопреемства для сопоставления явно одинаковых обязанностей. Проверь сомнения инструментами по полному комплекту. Если гипотеза неверна, отрази корректное соответствие по тем же источникам с объяснением. В limitations честно укажи, что приоритет отдан изменённым блокам, полный реестр неизменённых обязанностей не гарантирован.",
+                    "comparison_review": self.review.model_dump()})})
+            batches = review_batches(self.review) if self.review else [None]
+            # Reserve each synthesis pass and one bounded correction overall.
             tool_rounds = min(3, self.settings.max_model_calls - 1)
             for _ in range(tool_rounds):
-                if self.successes and self.calls >= self.settings.max_model_calls - 2:
+                if self.successes and self.calls >= self.settings.max_model_calls - len(batches) - 1:
                     break
                 response = await self.request(client, history)
                 history.extend(item.model_dump(exclude_none=True) for item in response.output)
@@ -383,35 +421,47 @@ class _Run:
                     break
             if not self.successes:
                 self.fail("no_tool_use", "Модель не выполнила успешную проверку инструментом; отчёт не опубликован.")
-            history.append({"role": "user", "content": "Заверши анализ структурированным отчётом по всему комплекту. Не утверждай поиски, которых не было. Если оснований не хватает, укажи insufficient_evidence/unresolved."})
-            response = await self.request(client, history, final=True)
-            payload = response.output_parsed
-            if not isinstance(payload, ReportPayload):
-                self.fail("invalid_model_output", "Модель не вернула полный структурированный отчёт.")
-            inherited = assemble_linked_citations(payload)
-            if inherited:
-                self.activity.append(Activity(operation="assemble_linked_citations", status="completed", referenced_ids=inherited))
-            try:
-                validate_payload(payload, self.documents, self.evidence, self.searched_after, response.source_excerpts)
-            except AgentFailure as first_error:
-                self.activity.append(Activity(operation="validate_references", status="rejected", referenced_ids=[]))
-                if self.calls >= self.settings.max_model_calls:
-                    raise
-                history.append({"role": "user", "content": _json({
-                    "correction": "Отчёт отклонён проверкой ссылок. Исправь его, используя исходный комплект. evidence_id находится рядом со своей quote в sources. source_excerpt дословно скопируй из quote указанного источника функции. Верни весь исправленный отчёт. Содержательные выводы без оснований убери или отметь как недостаточные; не придумывай источники.",
-                    "validation_error": first_error.message,
-                    "rejected_report": payload.model_dump(),
-                })})
-                response = await self.request(client, history, final=True)
+            reports = []
+            for index, scope in enumerate(batches):
+                self.report_scope = scope
+                batch_history = history + [{"role": "user", "content": "Заверши структурированный отчёт в области текущего прохода. Не утверждай поиски, которых не было. Если оснований не хватает, укажи insufficient_evidence/unresolved."}]
+                response = await self.request(client, batch_history, final=True)
                 payload = response.output_parsed
-                if not isinstance(payload, ReportPayload):
-                    self.fail("invalid_model_output", "Исправленный отчёт не прошёл проверку формата.")
                 inherited = assemble_linked_citations(payload)
                 if inherited:
                     self.activity.append(Activity(operation="assemble_linked_citations", status="completed", referenced_ids=inherited))
-                validate_payload(payload, self.documents, self.evidence, self.searched_after, response.source_excerpts)
+                try:
+                    validate_payload(payload, self.documents, self.evidence, self.searched_after, response.source_excerpts)
+                except AgentFailure as first_error:
+                    self.activity.append(Activity(operation="validate_references", status="rejected", referenced_ids=[]))
+                    remaining = len(batches) - index - 1
+                    if self.repair_used or self.calls >= self.settings.max_model_calls - remaining:
+                        raise
+                    self.repair_used = True
+                    batch_history.append({"role": "user", "content": _json({
+                        "correction": "Исправь только ошибочные ссылки/цитаты в этом отчёте, сохрани остальные выводы и верни полный отчёт текущего прохода. source_excerpt копируй из quote с исходными падежами, не из своего action/object. Не удаляй поддержанные источниками изменения ради сокращения.",
+                        "validation_error": first_error.message, "rejected_report": payload.model_dump()})})
+                    response = await self.request(client, batch_history, final=True)
+                    payload = response.output_parsed
+                    inherited = assemble_linked_citations(payload)
+                    if inherited:
+                        self.activity.append(Activity(operation="assemble_linked_citations", status="completed", referenced_ids=inherited))
+                    validate_payload(payload, self.documents, self.evidence, self.searched_after, response.source_excerpts)
+                reports.append(payload)
+            payload = merge_reports(reports)
+            validate_payload(payload, self.documents, self.evidence, self.searched_after)
+            self.record_review_coverage(payload)
             self.activity.append(Activity(operation="validate_references", status="completed_structural_only", referenced_ids=[]))
             return AgentResult(payload=payload, activity=self.activity, usage=self.usage())
+
+    def record_review_coverage(self, payload):
+        if self.review:
+            missing = missing_review_sources(self.review, payload)
+            self.activity.append(Activity(operation="review_source_coverage",
+                                          status="partial" if missing else "all_review_sources_represented",
+                                          referenced_ids=missing))
+            if missing:
+                payload.conclusion.limitations.append(f"В итоговой матрице/замечаниях не представлены {len(missing)} источников промежуточных смысловых заметок; их ID перечислены в событии review_source_coverage. Это ограничение охвата отчёта, не число пропущенных изменений.")
 
 
 async def run_agent(documents: list[Document], evidence: list[Evidence], settings: Settings) -> AgentResult:

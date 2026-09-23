@@ -17,7 +17,7 @@ class Settings:
     max_file_bytes: int = 5 * 1024 * 1024
     max_files_per_side: int = 5
     max_total_chars: int = 250000
-    max_model_calls: int = 5
+    max_model_calls: int = 6
     max_tool_calls: int = 8
     max_output_tokens: int = 49152
     model_timeout_seconds: float = 480
